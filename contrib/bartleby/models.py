@@ -1,0 +1,156 @@
+"""
+An attempt to make a django-driven form app similar to Google Forms.
+A form can have any number of items related to it (foreignkey).
+It also needs to have a result set - but how? I can't dynamically add and remove
+databases... the result set, the values, would need to be attached to the form
+field model, but also to each other.
+
+the form field model would have any number of values (foreignkey). 
+the values would have a foreignkey to the form field model and s foreignkey to a
+'dataset' model. dataset can be same as form... no.
+Each 'dataset' model is essentially one table row. foreignkey to form.
+"""
+
+
+from django.db import models
+from django import forms
+from django.contrib.contenttypes.models import ContentType
+
+
+class FormModel(models.Model):
+	"""
+	Can I somehow subclass this off of forms? Take advantage of built-in features?
+	or make a subclass of forms in a forms.py file that takes this instead of a
+	model. That might make more sense.
+	
+	Title and help_text are features of google forms, but GF also renders the form
+	as a page. Depending on how we end up using these forms, that might not be an
+	appropriate way of looking at things - i.e. perhaps the help text and title
+	are more a part of the content of the page than part of the actual form.
+	
+	Google also offers, for oberlin logins:
+		1. Require oberlin.edu sign-in to view this form
+		2. Automatically collect respondent's Oberlin College username
+		3. Allow users to edit responses.
+	"""
+	title = models.CharField(max_length=100) # Is this necessary?
+	help_text = models.TextField() # necessary?
+
+
+class BaseFormItem(models.Model):
+	"""
+	Generic parent class for every form item: fields, buttons, page breaks.
+	Essentially, you have a list of choices. Google's options are:
+	
+	Questions:
+		1. Text (input field)
+		2. Paragraph Text (textarea)
+		3. Multiple choice (vertical radio) -- 'go to page depending on answer'
+		4. checkboxes
+		5. Choose from a list (select box)
+		6. Scale (auto-generated radio numbers)
+		7. Grid (a bunch of items sharing radio buttons.)
+		
+	Other:
+		1. Section title (title + help text/desc)
+		2. Page break
+	
+	Submit/Continue buttons are auto-generated.
+	"""
+	form = models.ForeignKey(FormModel)
+	order = models.PositiveIntegerField()
+	instance_type = models.ForeignKey(ContentType, editable=False)
+	item_name = ''
+	
+	@property
+	def instance(self):
+		try:
+			return self.instance_type.get_object_for_this_type(id=self.id)
+		except:
+			return None
+	
+	
+class PageBreak(BaseFormItem):
+	item_name = 'Page Break'
+	
+class TitledFormItem(BaseFormItem):
+	title = models.CharField(max_length=75)
+	help_text = models.CharField(max_length=125)
+	
+	class Meta:
+		abstract = True
+
+
+class SectionTitle(TitledFormItem):
+	item_name = 'Section Title'
+
+
+class FieldItem(TitledFormItem):
+	required = models.BooleanField()
+	
+	def formfield(self, form_class=forms.CharField, **kwargs):
+		"""Returns a django.forms.Field instance according to this item's settings."""
+		defaults = {'required': self.required, 'label': self.title, 'help_text': self.help_text}
+		defaults.update(kwargs)
+		return form_class(**defaults)
+
+class TextField(FieldItem):
+	item_name = 'Text'
+	
+	def formfield(self, **kwargs):
+		defaults = {'form_class': forms.CharField, 'max_length': 200}
+		defaults.update(kwargs)
+		return super(TextField, self).formfield(**defaults)
+
+
+class ParagraphField(FieldItem):
+	item_name = 'Paragraph Text'
+	
+	def formfield(self, **kwargs):
+		defaults = {'widget': forms.Textarea}
+		defaults.update(kwargs)
+		return super(ParagraphField, self).formfield(**defaults)
+
+
+CHOICE_TYPES = (
+	('radio', 'Multiple Choice',),
+	('checkbox', 'Checkboxes',),
+	('select', 'Choose from a list',),
+)
+
+
+class ChoiceItem(FieldItem):
+	item_type = models.TextField(choices=CHOICE_TYPES)
+	CHOICE_FIELDS = {
+		'radio': {'form_class': forms.ChoiceField, 'widget': forms.RadioSelect},
+		'checkbox': {'form_class': forms.MultipleChoiceField, 'widget': forms.CheckboxSelectMultiple},
+		'select': {'form_class': forms.ChoiceField}
+	}
+	
+	@property
+	def item_name(self):
+		for k,v in CHOICE_TYPES:
+			if k == item_type:
+				return v
+		return ''
+	
+	def formfield(self, **kwargs):
+		defaults = self.CHOICE_FIELDS[self.item_type]
+		defaults.update(kwargs)
+		return super(ChoiceItem, self).formfield(**defaults)
+
+
+class ChoiceOption(models.Model):
+	item = models.ForeignKey(ChoiceItem, related_name='choices')
+	name = models.CharField(max_length=100)
+	key = models.SlugField(max_length=100)
+
+
+class ResultRow(models.Model):
+	form = models.ForeignKey(FormModel, related_name='results')
+
+
+class FieldValue(models.Model):
+	field = models.ForeignKey(FieldItem) # and through it, to the form.
+	row = models.ForeignKey(ResultRow, related_name='values')
+	value = models.TextField()
