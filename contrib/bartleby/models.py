@@ -15,6 +15,8 @@ Each 'dataset' model is essentially one table row. foreignkey to form.
 from django.db import models
 from django import forms
 from django.contrib.contenttypes.models import ContentType
+from django.contrib.auth.models import User
+from philo.contrib.bartleby.forms import DBForm
 
 
 class FormModel(models.Model):
@@ -32,12 +34,23 @@ class FormModel(models.Model):
 		1. Require oberlin.edu sign-in to view this form
 		2. Automatically collect respondent's Oberlin College username
 		3. Allow users to edit responses.
+	
+	This model should also control whether its values are saved to the database
+	or immediately emailed (and if emailed, then to who?)
 	"""
 	title = models.CharField(max_length=100) # Is this necessary?
-	help_text = models.TextField() # necessary?
+	help_text = models.TextField(blank=True) # necessary?
+	email_users = models.ManyToManyField(User, blank=True, null=True)
+	save_to_database = models.BooleanField()
+	
+	def make_form(self):
+		class GeneratedForm(DBForm):
+			instance = self
+		return GeneratedForm
+	form = property(make_form)
 
 
-class BaseFormItem(models.Model):
+class FormItem(models.Model):
 	"""
 	Generic parent class for every form item: fields, buttons, page breaks.
 	Essentially, you have a list of choices. Google's options are:
@@ -57,9 +70,9 @@ class BaseFormItem(models.Model):
 	
 	Submit/Continue buttons are auto-generated.
 	"""
-	form = models.ForeignKey(FormModel)
+	form = models.ForeignKey(FormModel, related_name='items')
 	order = models.PositiveIntegerField()
-	instance_type = models.ForeignKey(ContentType, editable=False)
+	instance_type = models.ForeignKey(ContentType , editable=False)
 	item_name = ''
 	
 	@property
@@ -69,13 +82,18 @@ class BaseFormItem(models.Model):
 		except:
 			return None
 	
+	def save(self, force_insert=False, force_update=False):
+		if not hasattr(self, 'instance_type_ptr'):
+			self.instance_type = ContentType.objects.get_for_model(self.__class__)
+		super(FormItem, self).save(force_insert, force_update)
 	
-class PageBreak(BaseFormItem):
+	
+class PageBreak(FormItem):
 	item_name = 'Page Break'
 	
-class TitledFormItem(BaseFormItem):
+class TitledFormItem(FormItem):
 	title = models.CharField(max_length=75)
-	help_text = models.CharField(max_length=125)
+	help_text = models.CharField(max_length=125, blank=True)
 	
 	class Meta:
 		abstract = True
@@ -94,22 +112,30 @@ class FieldItem(TitledFormItem):
 		defaults.update(kwargs)
 		return form_class(**defaults)
 
-class TextField(FieldItem):
+class CharField(FieldItem):
 	item_name = 'Text'
 	
 	def formfield(self, **kwargs):
 		defaults = {'form_class': forms.CharField, 'max_length': 200}
 		defaults.update(kwargs)
-		return super(TextField, self).formfield(**defaults)
+		return super(CharField, self).formfield(**defaults)
+	
+	class Meta:
+		verbose_name = 'Text Input'
+		verbose_name_plural = 'Text Inputs'
 
 
-class ParagraphField(FieldItem):
+class TextField(FieldItem):
 	item_name = 'Paragraph Text'
 	
 	def formfield(self, **kwargs):
 		defaults = {'widget': forms.Textarea}
 		defaults.update(kwargs)
-		return super(ParagraphField, self).formfield(**defaults)
+		return super(TextField, self).formfield(**defaults)
+	
+	class Meta:
+		verbose_name = 'Paragraph Text Input'
+		verbose_name_plural = 'Paragraph Text Inputs'
 
 
 CHOICE_TYPES = (
@@ -119,13 +145,13 @@ CHOICE_TYPES = (
 )
 
 
-class ChoiceItem(FieldItem):
-	item_type = models.TextField(choices=CHOICE_TYPES)
+class ChoiceField(FieldItem):
+	item_type = models.CharField(max_length=8, choices=CHOICE_TYPES, default='select')
 	CHOICE_FIELDS = {
 		'radio': {'form_class': forms.ChoiceField, 'widget': forms.RadioSelect},
 		'checkbox': {'form_class': forms.MultipleChoiceField, 'widget': forms.CheckboxSelectMultiple},
-		'select': {'form_class': forms.ChoiceField}
 	}
+	default = {'form_class': forms.ChoiceField}
 	
 	@property
 	def item_name(self):
@@ -135,13 +161,13 @@ class ChoiceItem(FieldItem):
 		return ''
 	
 	def formfield(self, **kwargs):
-		defaults = self.CHOICE_FIELDS[self.item_type]
+		defaults = self.CHOICE_FIELDS.get(self.item_type, self.default)
 		defaults.update(kwargs)
-		return super(ChoiceItem, self).formfield(**defaults)
+		return super(ChoiceField, self).formfield(**defaults)
 
 
 class ChoiceOption(models.Model):
-	item = models.ForeignKey(ChoiceItem, related_name='choices')
+	item = models.ForeignKey(ChoiceField, related_name='choices')
 	name = models.CharField(max_length=100)
 	key = models.SlugField(max_length=100)
 
