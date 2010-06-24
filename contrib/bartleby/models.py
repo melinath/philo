@@ -11,12 +11,19 @@ the values would have a foreignkey to the form field model and s foreignkey to a
 Each 'dataset' model is essentially one table row. foreignkey to form.
 """
 
+"""
+Note that really, I want to have groups of forms that come together. Each 'page'
+is really a separate form in a list of forms - which page you're on and the values
+entered on each page should be controlled by a session. Perhaps have the 'page
+break', but in the make_form method, return a list of forms for each 'page' - no.
+Do it in the metaclass.
+"""
+
 
 from django.db import models
 from django import forms
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import User
-from philo.contrib.bartleby.forms import DBForm
 
 
 class FormModel(models.Model):
@@ -42,12 +49,20 @@ class FormModel(models.Model):
 	help_text = models.TextField(blank=True) # necessary?
 	email_users = models.ManyToManyField(User, blank=True, null=True)
 	save_to_database = models.BooleanField()
+	_form = None
 	
 	def make_form(self):
+		from philo.contrib.bartleby.forms import DBForm
 		class GeneratedForm(DBForm):
 			instance = self
 		return GeneratedForm
-	form = property(make_form)
+	
+	@property
+	def form(self):
+		if not self._form:
+			self._form = self.make_form()
+		
+		return self._form
 
 
 class FormItem(models.Model):
@@ -70,7 +85,6 @@ class FormItem(models.Model):
 	
 	Submit/Continue buttons are auto-generated.
 	"""
-	form = models.ForeignKey(FormModel, related_name='items')
 	order = models.PositiveIntegerField()
 	instance_type = models.ForeignKey(ContentType , editable=False)
 	item_name = ''
@@ -87,10 +101,10 @@ class FormItem(models.Model):
 			self.instance_type = ContentType.objects.get_for_model(self.__class__)
 		super(FormItem, self).save(force_insert, force_update)
 	
-	
-class PageBreak(FormItem):
-	item_name = 'Page Break'
-	
+	class Meta:
+		abstract = True
+
+
 class TitledFormItem(FormItem):
 	title = models.CharField(max_length=75)
 	help_text = models.CharField(max_length=125, blank=True)
@@ -99,18 +113,32 @@ class TitledFormItem(FormItem):
 		abstract = True
 
 
-class SectionTitle(TitledFormItem):
+class NonFieldItem(FormItem):
+	form = models.ForeignKey(FormModel, related_name='items')
+	pass
+
+
+class PageBreak(NonFieldItem):
+	item_name = 'Page Break'
+
+
+class SectionTitle(NonFieldItem, TitledFormItem):
 	item_name = 'Section Title'
 
 
 class FieldItem(TitledFormItem):
+	form = models.ForeignKey(FormModel, related_name='fields')
 	required = models.BooleanField()
+	key = models.SlugField(max_length=30)
 	
 	def formfield(self, form_class=forms.CharField, **kwargs):
 		"""Returns a django.forms.Field instance according to this item's settings."""
 		defaults = {'required': self.required, 'label': self.title, 'help_text': self.help_text}
 		defaults.update(kwargs)
 		return form_class(**defaults)
+	
+	class Meta:
+		unique_together = ('key', 'form',)
 
 class CharField(FieldItem):
 	item_name = 'Text'
@@ -173,7 +201,12 @@ class ChoiceOption(models.Model):
 
 
 class ResultRow(models.Model):
-	form = models.ForeignKey(FormModel, related_name='results')
+	form = models.ForeignKey(FormModel, related_name='rows')
+	user = models.ForeignKey(User, blank=True, null=True)
+	timestamp = models.DateTimeField()
+	
+	class Meta:
+		unique_together = ('form', 'user', 'timestamp')
 
 
 class FieldValue(models.Model):
