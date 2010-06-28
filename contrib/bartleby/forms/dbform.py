@@ -35,11 +35,6 @@ class DBFormMetaclass(type):
 	them to a form.
 	"""
 	def __new__(cls, name, bases, attrs):
-		print 'Generating form:'
-		print 'Class: %s' % cls
-		print 'Name: %s' % name
-		print 'Bases: %s' % bases
-		print 'Attrs: %s' % attrs
 		attrs['base_fields'] = get_db_fields(bases, attrs)
 		new_class = super(DBFormMetaclass, cls).__new__(cls, name, bases, attrs)
 		if 'media' not in attrs:

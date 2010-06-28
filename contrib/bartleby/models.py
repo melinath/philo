@@ -22,8 +22,13 @@ Do it in the metaclass.
 
 from django.db import models
 from django import forms
+from django.contrib.contenttypes import generic
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import User
+from philo.utils import ContentTypeSubclassLimiter
+
+
+BLANK_CHOICE_DASH = [('', '---------')]
 
 
 class FormModel(models.Model):
@@ -65,6 +70,14 @@ class FormModel(models.Model):
 		return self._form
 
 
+class FormItemPluginMount(models.Model.__metaclass__):
+	def __init__(cls, name, bases, attrs):
+		if not hasattr(cls, 'plugins'):
+			cls.plugins = []
+		elif hasattr(cls, 'plugin_name'):
+			cls.plugins.append(cls)
+
+
 class FormItem(models.Model):
 	"""
 	Generic parent class for every form item: fields, buttons, page breaks.
@@ -85,9 +98,9 @@ class FormItem(models.Model):
 	
 	Submit/Continue buttons are auto-generated.
 	"""
-	order = models.PositiveIntegerField()
+	__metaclass__ = FormItemPluginMount
+	creation_counter = models.PositiveIntegerField(verbose_name='order')
 	instance_type = models.ForeignKey(ContentType , editable=False)
-	item_name = ''
 	
 	@property
 	def instance(self):
@@ -119,11 +132,11 @@ class NonFieldItem(FormItem):
 
 
 class PageBreak(NonFieldItem):
-	item_name = 'Page Break'
+	plugin_name = 'Page Break'
 
 
 class SectionTitle(NonFieldItem, TitledFormItem):
-	item_name = 'Section Title'
+	plugin_name = 'Section Title'
 
 
 class FieldItem(TitledFormItem):
@@ -141,7 +154,7 @@ class FieldItem(TitledFormItem):
 		unique_together = ('key', 'form',)
 
 class CharField(FieldItem):
-	item_name = 'Text'
+	plugin_name = 'Text'
 	
 	def formfield(self, **kwargs):
 		defaults = {'form_class': forms.CharField, 'max_length': 200}
@@ -154,7 +167,7 @@ class CharField(FieldItem):
 
 
 class TextField(FieldItem):
-	item_name = 'Paragraph Text'
+	plugin_name = 'Paragraph Text'
 	
 	def formfield(self, **kwargs):
 		defaults = {'widget': forms.Textarea}
@@ -166,36 +179,48 @@ class TextField(FieldItem):
 		verbose_name_plural = 'Paragraph Text Inputs'
 
 
-CHOICE_TYPES = (
-	('radio', 'Multiple Choice',),
-	('checkbox', 'Checkboxes',),
-	('select', 'Choose from a list',),
-)
-
-
 class ChoiceField(FieldItem):
-	item_type = models.CharField(max_length=8, choices=CHOICE_TYPES, default='select')
-	CHOICE_FIELDS = {
-		'radio': {'form_class': forms.ChoiceField, 'widget': forms.RadioSelect},
-		'checkbox': {'form_class': forms.MultipleChoiceField, 'widget': forms.CheckboxSelectMultiple},
-	}
-	default = {'form_class': forms.ChoiceField}
+	choiceoptions = generic.GenericRelation('ChoiceOption', content_type_field='field_content_type', object_id_field='field_object_id')
 	
 	@property
-	def item_name(self):
-		for k,v in CHOICE_TYPES:
-			if k == item_type:
-				return v
-		return ''
+	def choices(self):
+		return [(option.key, option.name) for option in self.choiceoptions.all()]
 	
 	def formfield(self, **kwargs):
-		defaults = self.CHOICE_FIELDS.get(self.item_type, self.default)
+		defaults = self.defaults
 		defaults.update(kwargs)
 		return super(ChoiceField, self).formfield(**defaults)
+	
+	def get_choices(self, include_blank=True, blank_choice=BLANK_CHOICE_DASH):
+		first_choice = include_blank and blank_choice or []
+		return first_choice + list(self.choices)
+	
+	class Meta:
+		abstract = True
+
+
+class RadioChoiceField(ChoiceField):
+	plugin_name = 'Multiple Choice'
+	defaults = {'form_class': forms.ChoiceField, 'widget': forms.RadioSelect}
+
+
+class CheckboxChoiceField(ChoiceField):
+	plugin_name = 'Checkboxes'
+	defaults = {'form_class': forms.MultipleChoiceField, 'widget': forms.CheckboxSelectMultiple}
+
+
+class SelectChoiceField(ChoiceField):
+	plugin_name = 'Choose from a list'
+	defaults = {'form_class': forms.ChoiceField}
+
+
+_choice_content_type_limiter = ContentTypeSubclassLimiter(ChoiceField)
 
 
 class ChoiceOption(models.Model):
-	item = models.ForeignKey(ChoiceField, related_name='choices')
+	field_content_type = models.ForeignKey(ContentType, limit_choices_to=_choice_content_type_limiter)
+	field_object_id = models.PositiveIntegerField()
+	field = generic.GenericForeignKey('field_content_type', 'field_object_id')
 	name = models.CharField(max_length=100)
 	key = models.SlugField(max_length=100)
 
