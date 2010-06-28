@@ -5,7 +5,7 @@ A PluginInlineFormset is a Formset of ModelForms belonging to arbitrary pluggabl
 
 from django.forms.formsets import BaseFormSet, formset_factory
 from django.forms.util import ErrorList
-from django.forms.models import ModelForm
+from django.forms.models import modelform_factory
 from django.forms import IntegerField, HiddenInput, Form, ChoiceField
 
 
@@ -43,14 +43,9 @@ class BaseMultiFormSet(BaseFormSet):
 		if self.initial:
 			try:
 				defaults['initial'] = self.initial[i]
-				form_class = self.initial[i]['form_class']
+				form_class = self.form_classes[int(self.initial[i]['form_type'])]
 			except IndexError:
 				pass
-		else:
-			try:
-				form_class = self.form_class_list[i]
-			except IndexError:
-				form_class = self.add_form
 		
 		# Allow extra forms to be empty.
 		if i >= self.initial_form_count():
@@ -61,7 +56,7 @@ class BaseMultiFormSet(BaseFormSet):
 		return form
 	
 	def add_fields(self, form, index):
-		form.base_fields['FORM_CLASS'] = IntegerField(widget=HiddenInput, initial=index)
+		form.fields['form_type'] = ChoiceField(self.add_form.CHOICES)
 		super(BaseMultiFormSet, self).add_fields(form, index)
 
 
@@ -89,6 +84,16 @@ def multiformset_factory(form_classes, form_class_list=[], formset_name='', form
 	add_form = multiformsetadd_factory(formset, addform, addform_metaclass, form_classes)
 	attrs = {'form_classes': form_classes, 'form_class_list': form_class_list, 'extra': extra, 'can_order': can_order, 'can_delete': can_delete, 'max_num': max_num, 'add_form': add_form}
 	return type(formset_name + 'MultiFormSet', (formset,), attrs)
+
+
+def modelmultiformset_factory(model_list, formset_name='Model', formset=BaseMultiFormSet, addform=MultiFormSetAddForm, addform_metaclass=MultiFormSetAddFormMetaclass, extra=1, can_order=False, can_delete=False, max_num=None):
+	"""
+	Return a MultiFormSet class allowing modelforms for the given models.
+	"""
+	form_classes = [modelform_factory(model) for model in model_list]
+	formset = multiformset_factory(form_classes, formset_name, formset, addform, addform_metaclass, extra, can_order, can_delete, max_num)
+	return formset
+
 
 """
 class PluginForm(ModelForm):
