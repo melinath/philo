@@ -25,7 +25,7 @@ from django import forms
 from django.contrib.contenttypes import generic
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import User
-from philo.utils import ContentTypeSubclassLimiter
+from philo.contrib.bartleby.utils import PluginLimiter, SubclassPluginLimiter
 
 
 BLANK_CHOICE_DASH = [('', '---------')]
@@ -96,23 +96,9 @@ class FormItem(models.Model):
 		1. Section title (title + help text/desc)
 		2. Page break
 	
-	Submit/Continue buttons are auto-generated.
+	Submit/Continue buttons are auto-generated?
 	"""
 	__metaclass__ = FormItemPluginMount
-	creation_counter = models.PositiveIntegerField(verbose_name='order')
-	instance_type = models.ForeignKey(ContentType , editable=False)
-	
-	@property
-	def instance(self):
-		try:
-			return self.instance_type.get_object_for_this_type(id=self.id)
-		except:
-			return None
-	
-	def save(self, force_insert=False, force_update=False):
-		if not hasattr(self, 'instance_type_ptr'):
-			self.instance_type = ContentType.objects.get_for_model(self.__class__)
-		super(FormItem, self).save(force_insert, force_update)
 	
 	class Meta:
 		abstract = True
@@ -126,32 +112,54 @@ class TitledFormItem(FormItem):
 		abstract = True
 
 
-class NonFieldItem(FormItem):
-	form = models.ForeignKey(FormModel, related_name='items')
-	pass
-
-
-class PageBreak(NonFieldItem):
-	plugin_name = 'Page Break'
-
-
-class SectionTitle(NonFieldItem, TitledFormItem):
-	plugin_name = 'Section Title'
-
-
 class FieldItem(TitledFormItem):
-	form = models.ForeignKey(FormModel, related_name='fields')
 	required = models.BooleanField()
 	key = models.SlugField(max_length=30)
-	
+	values = generic.GenericRelation('FieldValue', content_type_field='field_content_type', object_id_field='field_object_id')
+
 	def formfield(self, form_class=forms.CharField, **kwargs):
 		"""Returns a django.forms.Field instance according to this item's settings."""
 		defaults = {'required': self.required, 'label': self.title, 'help_text': self.help_text}
 		defaults.update(kwargs)
 		return form_class(**defaults)
-	
+
 	class Meta:
 		unique_together = ('key', 'form',)
+		abstract = True
+
+
+class ChoiceField(FieldItem):
+	choiceoptions = generic.GenericRelation('ChoiceOption', content_type_field='field_content_type', object_id_field='field_object_id')
+	
+	@property
+	def choices(self):
+		return [(option.key, option.name) for option in self.choiceoptions.all()]
+	
+	def formfield(self, **kwargs):
+		defaults = self.defaults
+		defaults.update(kwargs)
+		return super(ChoiceField, self).formfield(**defaults)
+	
+	def get_choices(self, include_blank=True, blank_choice=BLANK_CHOICE_DASH):
+		first_choice = include_blank and blank_choice or []
+		return first_choice + list(self.choices)
+	
+	class Meta:
+		abstract = True
+
+
+_item_content_type_limiter = PluginLimiter(FormItem)
+_field_content_type_limiter = SubclassPluginLimiter(FieldItem)
+_choice_content_type_limiter = SubclassPluginLimiter(ChoiceField)
+
+
+class PageBreak(FormItem):
+	plugin_name = 'Page Break'
+
+
+class SectionTitle(TitledFormItem):
+	plugin_name = 'Section Title'
+
 
 class CharField(FieldItem):
 	plugin_name = 'Text'
@@ -179,26 +187,6 @@ class TextField(FieldItem):
 		verbose_name_plural = 'Paragraph Text Inputs'
 
 
-class ChoiceField(FieldItem):
-	choiceoptions = generic.GenericRelation('ChoiceOption', content_type_field='field_content_type', object_id_field='field_object_id')
-	
-	@property
-	def choices(self):
-		return [(option.key, option.name) for option in self.choiceoptions.all()]
-	
-	def formfield(self, **kwargs):
-		defaults = self.defaults
-		defaults.update(kwargs)
-		return super(ChoiceField, self).formfield(**defaults)
-	
-	def get_choices(self, include_blank=True, blank_choice=BLANK_CHOICE_DASH):
-		first_choice = include_blank and blank_choice or []
-		return first_choice + list(self.choices)
-	
-	class Meta:
-		abstract = True
-
-
 class RadioChoiceField(ChoiceField):
 	plugin_name = 'Multiple Choice'
 	defaults = {'form_class': forms.ChoiceField, 'widget': forms.RadioSelect}
@@ -212,9 +200,6 @@ class CheckboxChoiceField(ChoiceField):
 class SelectChoiceField(ChoiceField):
 	plugin_name = 'Choose from a list'
 	defaults = {'form_class': forms.ChoiceField}
-
-
-_choice_content_type_limiter = ContentTypeSubclassLimiter(ChoiceField)
 
 
 class ChoiceOption(models.Model):
@@ -235,6 +220,27 @@ class ResultRow(models.Model):
 
 
 class FieldValue(models.Model):
-	field = models.ForeignKey(FieldItem) # and through it, to the form.
+	field_content_type = models.ForeignKey(ContentType, limit_choices_to=_field_content_type_limiter)
+	field_object_id = models.PositiveIntegerField()
+	field = generic.GenericForeignKey('field_content_type', 'field_object_id') # and through it, to the form.
 	row = models.ForeignKey(ResultRow, related_name='values')
 	value = models.TextField()
+
+
+class ItemFormRelationship(models.Model):
+	form = models.ForeignKey(FormModel, related_name='items')
+	item_content_type = models.ForeignKey(ContentType, limit_choices_to=_item_content_type_limiter, verbose_name='Question type')
+	item_object_id = models.PositiveIntegerField(editable=False, blank=True, null=True)
+	item = generic.GenericForeignKey('item_content_type', 'item_object_id')
+	creation_counter = models.PositiveIntegerField(verbose_name='order', editable=False)
+	
+	def save(self):
+		if self.creation_counter is None:
+			max_creation_counter = self.form.items.filter(form=self.form).aggregate(max=models.Max('creation_counter'))['max'] or 0
+			self.creation_counter = int(max_creation_counter) + 1
+		
+		super(ItemFormRelationship, self).save()
+	
+	class Meta:
+		unique_together = ('item_content_type', 'item_object_id')
+		ordering = ['creation_counter']

@@ -11,6 +11,7 @@
   </h3>
   {% if inline_admin_form.form.non_field_errors %}{{ inline_admin_form.form.non_field_errors }}{% endif %}
   {% for fieldset in inline_admin_form %}
+  	{{fieldset.fields}}hello!
     {% include "admin/includes/pluginfieldset.html" %}
   {% endfor %}
   {% if inline_admin_form.has_auto_field %}{{ inline_admin_form.pk_field.field }}{% endif %}
