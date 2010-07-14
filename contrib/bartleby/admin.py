@@ -12,6 +12,7 @@ from django.utils.safestring import mark_safe
 from django.utils.html import escape
 from django.forms.formsets import all_valid
 from django.http import Http404
+from django.contrib.contenttypes import generic
 
 
 COLLAPSE_CLOSED_CLASSES = ('collapse', 'closed', 'collapse-closed')
@@ -26,6 +27,10 @@ class NotRegistered(Exception):
 	pass
 
 
+class TitledItemAdmin(admin.ModelAdmin):
+	pass
+
+
 class FormFieldAdmin(admin.ModelAdmin):
 	fieldsets = (
 		(None, {
@@ -34,18 +39,56 @@ class FormFieldAdmin(admin.ModelAdmin):
 	)
 
 
-class PluginInline(admin.options.InlineModelAdmin):
+class ChoiceOptionInline(generic.GenericInlineModelAdmin):
+	model = ChoiceOption
+	ct_field = 'field_content_type'
+	ct_fk_field = 'field_object_id'
+	extra = 1
+
+
+class ChoiceFieldAdmin(FormFieldAdmin):
+	inlines = [ChoiceOptionInline]
+
+	def get_inlines(self, request, obj=None, prefix=None):
+		inlines = []
+		for inline in self.inline_instances:
+			FormSet = inline.get_formset(request, obj)
+			prefix = "%s-%s" % (prefix, FormSet.get_default_prefix())
+			formset = FormSet(instance=obj, prefix=prefix)
+			fieldsets = list(inline.get_fieldsets(request, obj))
+			inline = helpers.InlineAdminFormSet(inline, formset, fieldsets)
+			inlines.append(inline) 
+		return inlines
+
+
+class PassThrough(object):
+	key = None
+	
+	def __init__(self, dict):
+		self.dict = dict
+	
+	def __call__(self, key=None):
+		return self.dict[key]
+	
+	def __getattr__(self, name):
+		return getattr(self(self.key), name)
+
+
+class PluginDefaultAdmin(admin.options.InlineModelAdmin):
 	model = ItemFormRelationship
+
+
+class PluginInline(admin.options.InlineModelAdmin):
 	verbose_name = 'question'
 	verbose_name_plural = 'questions'
 	template = 'admin/edit_inline/plugin.html'
 	formset = PluginFormSet
 	form = PluginForm
-	plugin_mount = FormItem
+	plugin_mount = None
+	default_admin = PluginDefaultAdmin
 	plugins = {}
 	
 	def __init__(self, parent_model, admin_site):
-		x=self.plugins
 		for cls in self.plugin_mount.plugins:
 			if cls not in self.plugins:
 				self.plugins[cls] = admin.ModelAdmin(cls, admin_site)
@@ -55,10 +98,27 @@ class PluginInline(admin.options.InlineModelAdmin):
 				self.plugins[cls] = self.plugins[cls](cls, admin_site)
 		
 		self.plugins[None] = admin.ModelAdmin(self.model, admin_site)
+		self.passthrough = PassThrough(self.plugins)
+		
 		super(PluginInline, self).__init__(parent_model, admin_site)
 	
+	@property
+	def model(self):
+		return self.default_admin.model
+	
+	def set_fieldsets(self, request, obj=None):
+		default = self.get_fieldsets(request, obj)
+		
+		for admin in self.plugins.values():
+			if not admin.fieldsets:
+				admin.fieldsets = admin.get_fieldsets(request, obj)
+			x=admin.fieldsets
+			if admin.fieldsets[0] != default[0]:
+				admin.fieldsets = tuple(default) + tuple(admin.fieldsets)
+			
 	def get_fieldsets(self, request, obj=None):
-		"This method should return a dictionary of fieldsets, one for each type of plugin."
+		"""
+		This method shouldn't do anything - this should be handled by the passthrough.
 		default = self.plugins[None].get_fieldsets(request, obj)
 		fieldsets = {None: default}
 		
@@ -71,15 +131,20 @@ class PluginInline(admin.options.InlineModelAdmin):
 			fieldsets[cls] = fs
 		
 		return fieldsets
+		"""
+		return self.passthrough(None).get_fieldsets(request, obj)
 	
 	def get_readonly_fields(self, request, obj=None):
-		"This method should return a dictionary of readonly fields, split by form type."
+		"""
+		This method shouldn't do anything - this should be handled by the passthrough.
 		readonly = {}
 		x=self.plugins
 		for cls, modeladmin in self.plugins.items():
 			readonly[cls] = modeladmin.get_readonly_fields(request, obj)
 		
 		return readonly
+		"""
+		return self.passthrough(None).readonly_fields
 	
 	@classmethod
 	def register(self, plugin, admin_class):
@@ -99,6 +164,10 @@ class PluginInline(admin.options.InlineModelAdmin):
 		del(self.plugins[plugin])
 
 
+class FormItemPluginInline(PluginInline):
+	plugin_mount = FormItem
+
+
 class FormModelAdmin(admin.ModelAdmin):
 	filter_horizontal=('email_users',)
 	fieldsets = (
@@ -110,7 +179,7 @@ class FormModelAdmin(admin.ModelAdmin):
 			'classes': COLLAPSE_CLOSED_CLASSES
 		}),
 	)
-	plugin_inline = PluginInline
+	plugin_inline = FormItemPluginInline
 	
 	def __init__(self, model, admin_site):
 		super(FormModelAdmin, self).__init__(model, admin_site)
@@ -156,8 +225,26 @@ class FormModelAdmin(admin.ModelAdmin):
 				formsets.append(process_inline(FormSet, inline))
 			
 			# Custom stuff for the PluginInline
-			formsets.append(process_inline(self.plugin_inline_instance.get_formset(request, obj), self.plugin_inline_instance))
-
+			formset = process_inline(self.plugin_inline_instance.get_formset(request, new_object), self.plugin_inline_instance)
+			formsets.append(formset)
+			
+			# Here I just need to append formset to formsets for validation purposes! I don't need to attach
+			# inlines to the correct forms, really.
+			
+			for _form in formset.forms:
+				pt = self.plugin_inline_instance.passthrough
+				try:
+					pt.key = _form.subform._meta.model
+				except AttributeError:
+					continue
+				
+				if pt.inlines:
+					obj = _form.instance.item
+					for inline in pt.inline_instances:
+						FormSet = inline.get_formset(request, obj)
+						prefix = '%s-%s' % (_form.prefix, FormSet.get_default_prefix())
+						formsets.append(FormSet(request.POST, request.FILES, instance=obj, prefix=prefix, queryset=inline.queryset(request)))
+			
 			if all_valid(formsets) and form_validated:
 				self.save_model(request, new_object, form, change=True)
 				form.save_m2m()
@@ -171,23 +258,25 @@ class FormModelAdmin(admin.ModelAdmin):
 		else:
 			form = ModelForm(instance=obj)
 			prefixes = {}
-			def process_inline(FormSet, inline):
+			def process_inline(FormSet, inline, formsets=formsets):
 				prefix = FormSet.get_default_prefix()
 				prefixes[prefix] = prefixes.get(prefix, 0) + 1
 				if prefixes[prefix] != 1:
 					prefix = "%s-%s" % (prefix, prefixes[prefix])
-				return FormSet(instance=obj, prefix=prefix, queryset=inline.queryset(request))
+				formset = FormSet(instance=obj, prefix=prefix, queryset=inline.queryset(request))
+				formsets.append(formset)
 			
 			for FormSet, inline in zip(self.get_formsets(request, obj), self.inline_instances):
-				formsets.append(process_inline(FormSet, inline))
+				process_inline(FormSet, inline)
 			
-			formsets.append(process_inline(self.plugin_inline_instance.get_formset(request, obj), self.plugin_inline_instance))
+			process_inline(self.plugin_inline_instance.get_formset(request, obj), self.plugin_inline_instance)
+			
 
 		adminForm = helpers.AdminForm(form, self.get_fieldsets(request, obj),
 			self.prepopulated_fields, self.get_readonly_fields(request, obj),
 			model_admin=self)
 		media = self.media + adminForm.media
-
+		
 		inline_admin_formsets = []
 		for inline, formset in zip(self.inline_instances, formsets):
 			fieldsets = list(inline.get_fieldsets(request, obj))
@@ -196,14 +285,28 @@ class FormModelAdmin(admin.ModelAdmin):
 			inline_admin_formsets.append(inline_admin_formset)
 			media = media + inline_admin_formset.media
 		
-		# Customized for plugin formsets. Need to pass the raw fieldsets through as dicts
+		# Customized for plugin formsets.
 		inline, formset = (self.plugin_inline_instance, formsets[-1])
-		fieldsets = dict(inline.get_fieldsets(request, obj))
-		readonly = dict(inline.get_readonly_fields(request, obj))
-		inline_admin_formset = PluginInlineAdminFormSet(inline, formset, fieldsets, readonly, model_admin=self)	
+		inline.set_fieldsets(request, obj)
+		inline_admin_formset = PluginInlineAdminFormSet(inline, formset, model_admin=self)	
+		
+		for _form in formset.forms:
+			pt = inline.passthrough
+			try:
+				pt.key = _form.subform._meta.model
+			except AttributeError:
+				continue
+			
+			if pt.inlines:
+				if _form.instance.pk:
+					instance = _form.instance.item
+				else:
+					instance = None
+				_form.inlines = pt.get_inlines(request, instance, prefix=_form.prefix)
+		
 		inline_admin_formsets.append(inline_admin_formset)
 		media = media + inline_admin_formset.media
-
+		
 		context = {
 			'title': _('Change %s') % force_unicode(opts.verbose_name),
 			'adminform': adminForm,
@@ -220,6 +323,11 @@ class FormModelAdmin(admin.ModelAdmin):
 		return self.render_change_form(request, context, change=True, obj=obj)
 		
 
-PluginInline.register(TextField, FormFieldAdmin)
-PluginInline.register(CharField, FormFieldAdmin)
+for plugin in FieldItem.plugins:
+	if issubclass(plugin, ChoiceField):
+		FormItemPluginInline.register(plugin, ChoiceFieldAdmin)
+	elif issubclass(plugin, FieldItem):
+		FormItemPluginInline.register(plugin, FormFieldAdmin)
+	elif issubclass(plugin, TitledFormItem):
+		FormItemPluginInline.register(plugin, TitledItemAdmin)
 admin.site.register(FormModel, FormModelAdmin)

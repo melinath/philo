@@ -121,6 +121,9 @@ class TitledFormItem(FormItem):
 	title = models.CharField(max_length=75)
 	help_text = models.CharField(max_length=125, blank=True)
 	
+	def __unicode__(self):
+		return self.title
+	
 	class Meta:
 		abstract = True
 
@@ -142,11 +145,11 @@ class FieldItem(TitledFormItem):
 
 
 class ChoiceField(FieldItem):
-	choiceoptions = generic.GenericRelation('ChoiceOption', content_type_field='field_content_type', object_id_field='field_object_id')
+	options = generic.GenericRelation('ChoiceOption', content_type_field='field_content_type', object_id_field='field_object_id')
 	
 	@property
 	def choices(self):
-		return [(option.key, option.name) for option in self.choiceoptions.all()]
+		return [(option.key, option.name) for option in self.options.all()]
 	
 	def formfield(self, **kwargs):
 		defaults = self.defaults
@@ -172,44 +175,10 @@ class PageBreak(FormItem):
 
 class SectionTitle(TitledFormItem):
 	plugin_name = 'Section Title'
-
 
 	class Meta:
 		unique_together = ('key', 'form',)
 		abstract = True
-
-
-class ChoiceField(FieldItem):
-	choiceoptions = generic.GenericRelation('ChoiceOption', content_type_field='field_content_type', object_id_field='field_object_id')
-	
-	@property
-	def choices(self):
-		return [(option.key, option.name) for option in self.choiceoptions.all()]
-	
-	def formfield(self, **kwargs):
-		defaults = self.defaults
-		defaults.update(kwargs)
-		return super(ChoiceField, self).formfield(**defaults)
-	
-	def get_choices(self, include_blank=True, blank_choice=BLANK_CHOICE_DASH):
-		first_choice = include_blank and blank_choice or []
-		return first_choice + list(self.choices)
-	
-	class Meta:
-		abstract = True
-
-
-_item_content_type_limiter = PluginLimiter(FormItem)
-_field_content_type_limiter = SubclassPluginLimiter(FieldItem)
-_choice_content_type_limiter = SubclassPluginLimiter(ChoiceField)
-
-
-class PageBreak(FormItem):
-	plugin_name = 'Page Break'
-
-
-class SectionTitle(TitledFormItem):
-	plugin_name = 'Section Title'
 
 
 class CharField(FieldItem):

@@ -6,6 +6,7 @@ from django.utils.translation import ugettext as _
 from django.utils.translation import ugettext
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import ForeignKey
+from pprint import pformat
 
 
 class PluginSubForm(ModelForm):
@@ -93,29 +94,30 @@ class PluginInlineAdminFormSet(InlineAdminFormSet):
 	"""
 	A thin wrapper around the normal InlineAdminFormSet to get it to use a different admin form.
 	"""
-	#def __init__(self, inline, formset, fieldsets, readonly_fields=None, model_admin=None):
-	#	raise Exception
+	def __init__(self, inline, formset, model_admin=None):
+		self.opts = inline
+		self.formset = formset
+		self.model_admin = model_admin
 	
-	def __iter__(self):
+	def __iter__(self):	
+		pt = self.opts.passthrough
 		for form, original in zip(self.formset.initial_forms, self.formset.get_queryset()):
-			yield PluginInlineAdminForm(self.formset, form, self.fieldsets, self.opts.prepopulated_fields, original, self.readonly_fields, model_admin=self.model_admin)
+			pt.key = original.item_content_type.model_class()
+			yield PluginInlineAdminForm(self.formset, form, pt.fieldsets, pt.prepopulated_fields, original, pt.readonly_fields, model_admin=self.model_admin)
 		
+		pt.key = None
 		for form in self.formset.extra_forms:
-			yield PluginInlineAdminForm(self.formset, form, self.fieldsets, self.opts.prepopulated_fields, None, self.readonly_fields, model_admin=self.model_admin)
+			yield PluginInlineAdminForm(self.formset, form, pt.fieldsets, pt.prepopulated_fields, None, pt.readonly_fields, model_admin=self.model_admin)
 		
-		yield PluginInlineAdminForm(self.formset, self.formset.empty_form, self.fieldsets, self.opts.prepopulated_fields, None, self.readonly_fields, model_admin=self.model_admin)
+		yield PluginInlineAdminForm(self.formset, self.formset.empty_form, pt.fieldsets, pt.prepopulated_fields, None, pt.readonly_fields, model_admin=self.model_admin)
 
 
 class PluginInlineAdminForm(InlineAdminForm):
 	"""
-	Wraps the InlineAdminForm to feed it the correct fieldset depending on the object.
+	Wraps the InlineAdminForm to handle the setting of nested inlines.
 	"""
-	def __init__(self, formset, form, fieldsets, prepopulated_fields, original, readonly_fields=None, model_admin=None):
-		try:
-			fieldsets = fieldsets[form.subformclass._meta.model]
-		except (KeyError, AttributeError,):
-			fieldsets = fieldsets[None]
-		super(PluginInlineAdminForm, self).__init__(formset, form, fieldsets, prepopulated_fields, original, readonly_fields, model_admin)
+	def debug(self):
+		return pformat(self.__dict__,4) + pformat(self.form.__dict__)
 
 
 class PluginChoiceField(ModelChoiceField):
