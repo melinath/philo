@@ -1,6 +1,6 @@
 from django.contrib import admin
-from philo.contrib.bartleby.models import FormModel, FormItem, ItemFormRelationship
-from philo.contrib.bartleby.forms import PluginFormSet, PluginInlineAdminFormSet
+from philo.contrib.bartleby.models import *
+from philo.contrib.bartleby.forms import PluginForm, PluginFormSet, PluginInlineAdminFormSet
 from django.views.decorators.csrf import csrf_protect
 from django.utils.decorators import method_decorator
 from django.contrib.admin.util import unquote
@@ -9,6 +9,9 @@ from django.contrib.admin import helpers
 from django.utils.translation import ugettext as _
 from django.utils.encoding import force_unicode
 from django.utils.safestring import mark_safe
+from django.utils.html import escape
+from django.forms.formsets import all_valid
+from django.http import Http404
 
 
 COLLAPSE_CLOSED_CLASSES = ('collapse', 'closed', 'collapse-closed')
@@ -23,19 +26,31 @@ class NotRegistered(Exception):
 	pass
 
 
+class FormFieldAdmin(admin.ModelAdmin):
+	fieldsets = (
+		(None, {
+			'fields': ('title', 'key', 'help_text', 'required')
+		}),
+	)
+
+
 class PluginInline(admin.options.InlineModelAdmin):
 	model = ItemFormRelationship
 	verbose_name = 'question'
 	verbose_name_plural = 'questions'
 	template = 'admin/edit_inline/plugin.html'
 	formset = PluginFormSet
+	form = PluginForm
 	plugin_mount = FormItem
 	plugins = {}
 	
 	def __init__(self, parent_model, admin_site):
+		x=self.plugins
 		for cls in self.plugin_mount.plugins:
 			if cls not in self.plugins:
 				self.plugins[cls] = admin.ModelAdmin(cls, admin_site)
+			elif isinstance(self.plugins[cls], admin.ModelAdmin):
+				continue
 			else:
 				self.plugins[cls] = self.plugins[cls](cls, admin_site)
 		
@@ -49,11 +64,10 @@ class PluginInline(admin.options.InlineModelAdmin):
 		
 		for cls, modeladmin in self.plugins.items():
 			fs = modeladmin.get_fieldsets(request, obj)
-			if fs != default:
-				if fs[0][0] is not None:
-					fs = default + fs
-				else:
-					fs[0][1]['fields'] = default[0][1]['fields'] + fs[0][1]['fields']
+			
+			if fs[0] != default[0]:
+				fs = tuple(default) + tuple(fs)
+			
 			fieldsets[cls] = fs
 		
 		return fieldsets
@@ -83,7 +97,6 @@ class PluginInline(admin.options.InlineModelAdmin):
 			raise NotRegistered
 		
 		del(self.plugins[plugin])
-		
 
 
 class FormModelAdmin(admin.ModelAdmin):
@@ -207,5 +220,6 @@ class FormModelAdmin(admin.ModelAdmin):
 		return self.render_change_form(request, context, change=True, obj=obj)
 		
 
-
+PluginInline.register(TextField, FormFieldAdmin)
+PluginInline.register(CharField, FormFieldAdmin)
 admin.site.register(FormModel, FormModelAdmin)

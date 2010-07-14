@@ -56,6 +56,9 @@ class FormModel(models.Model):
 	save_to_database = models.BooleanField()
 	_form = None
 	
+	def __unicode__(self):
+		return self.title
+	
 	def make_form(self):
 		from philo.contrib.bartleby.forms import DBForm
 		class GeneratedForm(DBForm):
@@ -99,6 +102,15 @@ class FormItem(models.Model):
 	Submit/Continue buttons are auto-generated?
 	"""
 	__metaclass__ = FormItemPluginMount
+	_form_relationship = generic.GenericRelation('ItemFormRelationship', content_type_field='item_content_type', object_id_field='item_object_id')
+	
+	@property
+	def form_relationship(self):
+		return self._form_relationship.all()[0]
+	
+	@property
+	def form(self):
+		return self.form_relationship.form
 	
 	class Meta:
 		abstract = True
@@ -122,6 +134,44 @@ class FieldItem(TitledFormItem):
 		defaults = {'required': self.required, 'label': self.title, 'help_text': self.help_text}
 		defaults.update(kwargs)
 		return form_class(**defaults)
+
+	class Meta:
+		unique_together = ('key', 'form',)
+		abstract = True
+
+
+class ChoiceField(FieldItem):
+	choiceoptions = generic.GenericRelation('ChoiceOption', content_type_field='field_content_type', object_id_field='field_object_id')
+	
+	@property
+	def choices(self):
+		return [(option.key, option.name) for option in self.choiceoptions.all()]
+	
+	def formfield(self, **kwargs):
+		defaults = self.defaults
+		defaults.update(kwargs)
+		return super(ChoiceField, self).formfield(**defaults)
+	
+	def get_choices(self, include_blank=True, blank_choice=BLANK_CHOICE_DASH):
+		first_choice = include_blank and blank_choice or []
+		return first_choice + list(self.choices)
+	
+	class Meta:
+		abstract = True
+
+
+_item_content_type_limiter = PluginLimiter(FormItem)
+_field_content_type_limiter = SubclassPluginLimiter(FieldItem)
+_choice_content_type_limiter = SubclassPluginLimiter(ChoiceField)
+
+
+class PageBreak(FormItem):
+	plugin_name = 'Page Break'
+
+
+class SectionTitle(TitledFormItem):
+	plugin_name = 'Section Title'
+
 
 	class Meta:
 		unique_together = ('key', 'form',)
@@ -230,16 +280,36 @@ class FieldValue(models.Model):
 class ItemFormRelationship(models.Model):
 	form = models.ForeignKey(FormModel, related_name='items')
 	item_content_type = models.ForeignKey(ContentType, limit_choices_to=_item_content_type_limiter, verbose_name='Question type')
-	item_object_id = models.PositiveIntegerField(editable=False, blank=True, null=True)
+	item_object_id = models.PositiveIntegerField(blank=True, null=True, editable=False)
 	item = generic.GenericForeignKey('item_content_type', 'item_object_id')
 	creation_counter = models.PositiveIntegerField(verbose_name='order', editable=False)
 	
+	_item = None
+	_item_content_type = None
+	_item_object_id = None
+	
+	def __init__(self, *args, **kwargs):
+		super(ItemFormRelationship, self).__init__(*args, **kwargs)
+		
+		# Cache for comparison later
+		if self.item is not None:
+			self._item = self.item
+			self._item_content_type = self.item_content_type
+			self._item_object_id = self.item_object_id
+	
 	def save(self):
+		if self.pk is not None:
+			if self._item != self.item and self._item is not None:
+				self._item.delete()
+		
 		if self.creation_counter is None:
 			max_creation_counter = self.form.items.filter(form=self.form).aggregate(max=models.Max('creation_counter'))['max'] or 0
 			self.creation_counter = int(max_creation_counter) + 1
 		
 		super(ItemFormRelationship, self).save()
+	
+	def __unicode__(self):
+		return '%s -> %s' % (self.form, self.item)
 	
 	class Meta:
 		unique_together = ('item_content_type', 'item_object_id')

@@ -1,42 +1,80 @@
 from django.forms.models import ModelForm, modelform_factory, BaseInlineFormSet
-from django.forms.util import ErrorList
+from django.forms.util import ErrorList, ErrorDict
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.admin.helpers import InlineAdminFormSet, InlineAdminForm
+from django.utils.translation import ugettext as _
+from django.utils.translation import ugettext
+from django.contrib.contenttypes.models import ContentType
 
-"""
+
+class PluginSubForm(ModelForm):
+	def has_changed(self):
+		instance = self.parent.instance
+		if instance._item != instance.item:
+			return False
+		
+		return super(PluginSubForm, self).has_changed()
+	
+	def _post_clean(self):
+		# I need to save the sub-item's id.
+		# Cases:
+		# 1. There is no sub-item. id=None.
+		# 2. sub-item contenttype the same. id = subitem.id
+		# 3. sub-item contenttype changed. id=None
+		instance = self.parent.instance
+		old = instance._item
+		old_ct = instance._item_content_type
+		new_ct = instance.item_content_type
+		
+		if old is None or old_ct != new_ct:
+			id = None
+		else:
+			id = old.id
+		
+		self.cleaned_data['id'] = id
+		
+		super(PluginSubForm, self)._post_clean()
+
+
 class PluginForm(ModelForm):
 	subform = None
+	subformclass = None
 	
-	def __init__(self, instance=None, **kwargs):
-		opts = self._meta
-		if instance is not None:
-			model = instance.item_content_type.model_class()
-			
-			if instance.item_object_id is None:
-				instance = model()
+	def __init__(self, *args, **kwargs):
+		super(PluginForm, self).__init__(*args, **kwargs)
+		
+		if self.instance:
+			try:
+				contenttype = self.instance.item_content_type
+			except ObjectDoesNotExist:
+				pass
 			else:
-				instance = model.objects.get_or_create(id=instance.item_object_id)
-			
-			subform = modelform_factory(model)
-			x=self.base_fields
-			y=subform.base_fields
-			self.base_fields.update(subform.base_fields)
-			
-			z=dir(self)
-			raise Exception
-		defaults = {
-			'data': None,
-			'files': None,
-			'auto_id': 'id_%s',
-			'prefix': None,
-			'initial': None,
-			'error_class': ErrorList,
-			'label_suffix': ':',
-			'empty_permitted': False, 
-		}
-		defaults.update(kwargs)
-		super(PluginForm, self).__init__(instance=instance, **kwargs)
-"""
+				model = contenttype.model_class()
+				self.subformclass = modelform_factory(model, form=PluginSubForm)
+				
+				#Now try to get the related instance to instantiate to subform!
+				kwargs.update({
+					'instance': self.instance.item
+				})
+				self.subform = self.subformclass(*args, **kwargs)
+				self.subform.parent = self
+				initial = self.subform.initial
+				if 'id' in initial:
+					del(initial['id'])
+				self.initial.update(initial)
+	
+	def is_valid(self):
+		subform_valid = True
+		
+		if self.subform is not None:
+			subform_valid = self.subform.is_valid()
+		
+		return super(PluginForm, self).is_valid() and subform_valid
+	
+	def save(self, commit=True):
+		if self.subform is not None:
+			self.instance.item = self.subform.save()
+		return super(PluginForm, self).save(commit)
 
 
 class PluginFormSet(BaseInlineFormSet):
@@ -44,15 +82,8 @@ class PluginFormSet(BaseInlineFormSet):
 	#	raise Exception
 	
 	def add_fields(self, form, index):
-		instance = form.instance
-		try:
-			contenttype = instance.item_content_type
-		except ObjectDoesNotExist:
-			form.instance_class = None
-		else:
-			form.instance_class = model = contenttype.model_class()
-			subform = modelform_factory(model)
-			form.fields.update(subform.base_fields)
+		if form.subform is not None:
+			form.fields.update(form.subform.fields)
 		
 		super(PluginFormSet, self).add_fields(form, index)
 
@@ -80,7 +111,7 @@ class PluginInlineAdminForm(InlineAdminForm):
 	"""
 	def __init__(self, formset, form, fieldsets, prepopulated_fields, original, readonly_fields=None, model_admin=None):
 		try:
-			fieldsets = fieldsets[form.instance_class]
-		except (KeyError, AttributeError, ObjectDoesNotExist):
+			fieldsets = fieldsets[form.subformclass._meta.model]
+		except (KeyError, AttributeError,):
 			fieldsets = fieldsets[None]
 		super(PluginInlineAdminForm, self).__init__(formset, form, fieldsets, prepopulated_fields, original, readonly_fields, model_admin)
