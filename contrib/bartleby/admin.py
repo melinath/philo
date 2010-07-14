@@ -1,6 +1,6 @@
 from django.contrib import admin
 from philo.contrib.bartleby.models import *
-from philo.contrib.bartleby.forms import PluginForm, PluginFormSet, PluginInlineAdminFormSet
+from philo.contrib.bartleby.forms.plugins import PluginForm, PluginFormSet, PluginInlineAdminFormSet
 from django.views.decorators.csrf import csrf_protect
 from django.utils.decorators import method_decorator
 from django.contrib.admin.util import unquote

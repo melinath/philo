@@ -1,10 +1,11 @@
-from django.forms.models import ModelForm, modelform_factory, BaseInlineFormSet
+from django.forms.models import ModelForm, modelform_factory, BaseInlineFormSet, ModelChoiceField
 from django.forms.util import ErrorList, ErrorDict
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.admin.helpers import InlineAdminFormSet, InlineAdminForm
 from django.utils.translation import ugettext as _
 from django.utils.translation import ugettext
 from django.contrib.contenttypes.models import ContentType
+from django.db.models import ForeignKey
 
 
 class PluginSubForm(ModelForm):
@@ -115,3 +116,20 @@ class PluginInlineAdminForm(InlineAdminForm):
 		except (KeyError, AttributeError,):
 			fieldsets = fieldsets[None]
 		super(PluginInlineAdminForm, self).__init__(formset, form, fieldsets, prepopulated_fields, original, readonly_fields, model_admin)
+
+
+class PluginChoiceField(ModelChoiceField):
+	"""
+	Wrapper around ModelChoiceField to customize label generation.
+	"""
+	def label_from_instance(self, obj):
+		return obj.model_class().plugin_name
+
+
+class PluginForeignKey(ForeignKey):
+	def formfield(self, **kwargs):
+		defaults = {
+			'form_class': PluginChoiceField
+		}
+		defaults.update(kwargs)
+		return super(PluginForeignKey, self).formfield(**defaults)

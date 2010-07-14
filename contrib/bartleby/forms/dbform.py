@@ -17,16 +17,27 @@ def get_db_fields(bases, attrs):
 	Create a list of form field instances from the passed-in 'instance' attr,
 	plus any fields in bases.
 	"""
+	# prevent circular import.
+	from philo.contrib.bartleby.models import FieldItem
+	
+	fields = []
+	items = []
 	if attrs['instance'] is not None:
-		fields = [(model.instance.key, model.instance.formfield()) for model in attrs['instance'].fields.all()]
-	else:
-		fields = []
+		for rel in attrs['instance'].items.order_by('creation_counter'):
+			item = rel.item
+			if item is None:
+				continue
+			
+			if isinstance(item, FieldItem):
+				fields.append((item.key, item.formfield()))
+			
+			items.append(item)
 	
 	for base in bases[::-1]:
 		if hasattr(base, 'base_fields'):
 			fields = base.base_fields.items() + fields
 	
-	return SortedDict(fields)
+	return (SortedDict(fields), items,)
 
 
 class DBFormMetaclass(type):
@@ -35,7 +46,7 @@ class DBFormMetaclass(type):
 	them to a form.
 	"""
 	def __new__(cls, name, bases, attrs):
-		attrs['base_fields'] = get_db_fields(bases, attrs)
+		attrs['base_fields'], attrs['base_items'] = get_db_fields(bases, attrs)
 		new_class = super(DBFormMetaclass, cls).__new__(cls, name, bases, attrs)
 		if 'media' not in attrs:
 			new_class.media = widgets.media_property(new_class)

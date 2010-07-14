@@ -26,6 +26,7 @@ from django.contrib.contenttypes import generic
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import User
 from philo.contrib.bartleby.utils import PluginLimiter, SubclassPluginLimiter
+from philo.contrib.bartleby.forms.plugins import PluginForeignKey
 
 
 BLANK_CHOICE_DASH = [('', '---------')]
@@ -279,7 +280,7 @@ class FieldValue(models.Model):
 
 class ItemFormRelationship(models.Model):
 	form = models.ForeignKey(FormModel, related_name='items')
-	item_content_type = models.ForeignKey(ContentType, limit_choices_to=_item_content_type_limiter, verbose_name='Question type')
+	item_content_type = PluginForeignKey(ContentType, limit_choices_to=_item_content_type_limiter, verbose_name='Question type')
 	item_object_id = models.PositiveIntegerField(blank=True, null=True, editable=False)
 	item = generic.GenericForeignKey('item_content_type', 'item_object_id')
 	creation_counter = models.PositiveIntegerField(verbose_name='order', editable=False)
