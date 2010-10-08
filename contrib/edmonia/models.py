@@ -10,6 +10,8 @@ class AttributionStyle(models.Model):
 	# Should this be a OneToOneField? How do we resolve which style to use for a certain object?
 	# What if an attribution style changes over time? The old photos should still use the old style; the
 	# new photos should use the new style.
+	# We could let the editor select from the person's various styles... but that seems clunky if there's
+	# no default.
 	person = models.ForeignKey(PERSON_MODULE, related_name='attribution_styles')
 	attribution = models.CharField(max_length=75, help_text="If present, %s will be replaced by the contributor's name.")
 	attribution_notes = models.TextField()
@@ -33,9 +35,23 @@ class ResourcePersonMetaInfo(models.Model):
 
 
 class ResourceTagMetaInfo(models.Model):
+	# Should curated/not be defined here?
 	tag = models.ForeignKey(Tag)
 	media = models.ForeignKey('Resource')
 	is_curated = models.BooleanField()
+
+
+if hasattr(settings, 'EDMONIA_LOCATION_MODULE'):
+	# import that.
+elif 'philo.contrib.julian' in settings.INSTALLED_APPS:
+	from philo.contrib.julian import Location
+else:
+	class Location(Entity, Titled):
+		# Should location be defined here?
+		country = None
+		# City includes any relevant state/province information.
+		city = models.CharField(max_length=256, blank=True)
+		description = models.TextField(blank=True, help_text="A closer description of the location, such as an address or GPS coordinates.")
 
 
 PHOTOGRAPH = 1
@@ -60,19 +76,16 @@ USAGE_LIMITATIONS = {
 }
 
 
-class Resource(Entity):
+class Resource(Entity, Titled):
 	people = models.ManyToManyField(PERSON_MODULE, through=ResourcePersonMetaInfo)
 	caption = models.TextField(blank=True)
-	
-	# Location should probably be tied into some sort of generic "Location" model that could also be used
-	# for event venues. Where would this model sit?
-	location = models.TextField(blank=True)
+	locations = models.ManyToManyField(Location)
 	
 	creation_date = models.DateField(blank=True, null=True)
 	creation_time = models.TimeField(blank=True, null=True)
 	timestamp = models.DateTimeField(help_text="Date the photo was added to the system")
 	
-	usage_limitations = models.CommaSeparatedIntegerField(max_length=255, blank=True, choices=USAGE_LIMITATIONS.items())
+	#usage_limitations = models.CommaSeparatedIntegerField(max_length=255, blank=True, choices=USAGE_LIMITATIONS.items())
 	type = models.PositiveSmallIntegerField(choices=RESOURCE_TYPES.items())
 	# event?
 	
@@ -81,9 +94,16 @@ class Resource(Entity):
 	# the forms used to manage this model, not to the model itself.
 	source = models.CharField(max_length=50)
 	
-	notes = models.TextField()
+	notes = models.TextField(blank=True)
 	tags = models.ManyToManyField(blank=True, null=True, through=ResourceTagMetaInfo)
-	related_resources = models.ManyToManyField('self')
+	related_resources = models.ManyToManyField('self', blank=True, null=True)
+
+
+class UsageLimitationArgs(models.Model):
+	usage_limitation = models.PositiveSmallIntegerField(choices=USAGE_LIMITATIONS)
+	resource = models.ForeignKey('Resource')
+	value = models.TextField()
+	#value = models.JSONField()
 
 
 # class ResourceRelationToSomething
