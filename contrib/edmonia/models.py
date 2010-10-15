@@ -1,112 +1,61 @@
-from django.conf import settings
+#from django.conf import settings
+from django.contrib.contenttypes import generic
+from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from philo.models import Tag, Entity
+#from philo.models import Tag, Entity, Titled
+from philo.models import Entity, Titled
+from philo.utils import ContentTypeSubclassLimiter
 
 
-PERSON_MODULE = getattr(settings, 'PHILO_PERSON_MODULE', 'auth.User')
+#PERSON_MODULE = getattr(settings, 'PHILO_PERSON_MODULE', 'auth.User')
 
 
-class AttributionStyle(models.Model):
-	# Should this be a OneToOneField? How do we resolve which style to use for a certain object?
-	# What if an attribution style changes over time? The old photos should still use the old style; the
-	# new photos should use the new style.
-	# We could let the editor select from the person's various styles... but that seems clunky if there's
-	# no default.
-	person = models.ForeignKey(PERSON_MODULE, related_name='attribution_styles')
-	attribution = models.CharField(max_length=75, help_text="If present, %s will be replaced by the contributor's name.")
-	attribution_notes = models.TextField()
-	# stop_using = DateTime
-	# resource_type = SmallPositiveInteger
+class ResourceSource(models.Model):
+	resources = generic.GenericRelation('Resource')
+	
+	def get_source(self):
+		return self.source
+	
+	class Meta:
+		abstract = True
 
 
-CONTRIBUTOR = 1
-TAGGED = 2
-RESOURCE_PERSON_RELATIONSHIPS = {
-	CONTRIBUTOR: 'Contributor',
-	TAGGED: 'Tagged'
-}
-#RESOURCE_PERSON_RELATIONSHIP_CHOICES = RESOURCE_PERSON_RELATIONSHIPS.items()
+resource_source_contenttype_limiter = ContentTypeSubclassLimiter(ResourceSource)
 
 
-class ResourcePersonMetaInfo(models.Model):
-	person = models.ForeignKey(PERSON_MODULE)
-	media = models.ForeignKey('Resource')
-	relationship = models.PositiveSmallIntegerField(choices=RESOURCE_PERSON_RELATIONSHIPS.items())
+class FileSource(ResourceSource):
+	source = models.FileField(upload_to='philo/edmonia/%Y/%m/%d')
 
 
-class ResourceTagMetaInfo(models.Model):
-	# Should curated/not be defined here?
-	tag = models.ForeignKey(Tag)
-	media = models.ForeignKey('Resource')
-	is_curated = models.BooleanField()
+class ImageSource(ResourceSource):
+	source = models.ImageField(upload_to='philo/edmonia/%Y/%m/%d')
 
 
-if hasattr(settings, 'EDMONIA_LOCATION_MODULE'):
-	# import that.
-elif 'philo.contrib.julian' in settings.INSTALLED_APPS:
-	from philo.contrib.julian import Location
-else:
-	class Location(Entity, Titled):
-		# Should location be defined here?
-		country = None
-		# City includes any relevant state/province information.
-		city = models.CharField(max_length=256, blank=True)
-		description = models.TextField(blank=True, help_text="A closer description of the location, such as an address or GPS coordinates.")
-
-
-PHOTOGRAPH = 1
-VIDEO = 2
-GRAPHIC = 3
-RESOURCE_TYPES = {
-	PHOTOGRAPH: 'Photograph',
-	VIDEO: 'Video',
-	GRAPHIC: 'Graphic'
-}
-
-
-# Probably implement usage limitations with a series of plugins and a JSON field. The plugins control how
-# the field data is interpreted. Ack, though - some limitations may vary depending on what type of resource
-# we're dealing with. Each should blacklist or whitelist resource types so that forms can decide which ones
-# to use without knowing anything about them.
-USAGE_LIMITATIONS = {
-	#print only: true/false
-	#until date: datetime
-	#size/resolution: paired integers (floats?)
-	#other: text field
-}
+class URLSource(ResourceSource):
+	source = models.URLField()
 
 
 class Resource(Entity, Titled):
-	people = models.ManyToManyField(PERSON_MODULE, through=ResourcePersonMetaInfo)
-	caption = models.TextField(blank=True)
-	locations = models.ManyToManyField(Location)
-	
+	#people = models.ManyToManyField(PERSON_MODULE, through=ResourcePersonMetaInfo, blank=True, null=True)
 	creation_date = models.DateField(blank=True, null=True)
 	creation_time = models.TimeField(blank=True, null=True)
-	timestamp = models.DateTimeField(help_text="Date the photo was added to the system")
+	timestamp_added = models.DateTimeField(verbose_name="Added to the system")
+	timestamp_modified = models.DateTimeField(verbose_name="Last modified")
 	
-	#usage_limitations = models.CommaSeparatedIntegerField(max_length=255, blank=True, choices=USAGE_LIMITATIONS.items())
-	type = models.PositiveSmallIntegerField(choices=RESOURCE_TYPES.items())
-	# event?
+	source_content_type = models.ForeignKey(ContentType, limit_choices_to=resource_source_contenttype_limiter)
+	source_object_id = models.PositiveIntegerField()
+	source = generic.GenericForeignKey('source_content_type', 'source_object_id')
 	
-	# `source` may refer to various things: for a photograph entered into the system, the source could be
-	# digital/negative/photo; for a video, it could be digital/film/etc. These distinctions are relevant to
-	# the forms used to manage this model, not to the model itself.
-	source = models.CharField(max_length=50)
+	#notes = models.TextField(blank=True)
+	#tags = models.ManyToManyField(blank=True, null=True)
 	
-	notes = models.TextField(blank=True)
-	tags = models.ManyToManyField(blank=True, null=True, through=ResourceTagMetaInfo)
+	# Include a special relationship to other resources as this is mutual.
 	related_resources = models.ManyToManyField('self', blank=True, null=True)
 
 
-class UsageLimitationArgs(models.Model):
-	usage_limitation = models.PositiveSmallIntegerField(choices=USAGE_LIMITATIONS)
-	resource = models.ForeignKey('Resource')
-	value = models.TextField()
-	#value = models.JSONField()
-
-
-# class ResourceRelationToSomething
-#     It was mentioned that photos should have a relationship with anything that allowed for a caption and
-#     additional cropping information. Can this idea be genericized? Or would it perhaps be best to provide
-#     an abstract model that's easy to subclass and have a relationship through?
+class ResourceRelated(Entity):
+	related_content_type = models.ForeignKey(ContentType)
+	related_object_id = models.PositiveIntegerField()
+	rel_to = generic.GenericForeignKey('related_content_type', 'related_object_id')
+	
+	resource = models.ForeignKey(Resource, related_name='related')
