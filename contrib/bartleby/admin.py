@@ -16,6 +16,7 @@ class FieldInline(admin.StackedInline):
 			'fields': ('label', 'help_text', ('required', 'multiple'), 'key', 'order'),
 		}),
 	)
+	sortable_field_name = 'order'
 
 
 class FormAdmin(admin.ModelAdmin):
