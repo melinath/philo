@@ -1,6 +1,11 @@
 from django import forms
 from django.contrib.auth.models import User, Group
+from django.contrib.contenttypes import generic
+from django.contrib.sites.models import Site
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils.translation import ugettext_lazy as _
+from philo.models import register_value_model, Entity, Titled, Template
 from philo.models.fields import JSONField
 from philo.contrib.bartleby.forms import databaseform_factory
 
@@ -8,7 +13,7 @@ from philo.contrib.bartleby.forms import databaseform_factory
 #BLANK_CHOICE_DASH = [('', '---------')]
 
 
-class Form(models.Model):
+class Form(Entity, Titled):
 	"""
 	This model controls form-wide options such as data storage. In other words,
 	should the form have a title? Help text? Should data be stored in the database
@@ -17,22 +22,29 @@ class Form(models.Model):
 	It is important not to think of this as a django form. It is much more along
 	the lines of a google form.
 	"""
-	title = models.CharField(max_length=100)
 	help_text = models.TextField(blank=True)
+	email_template = models.ForeignKey(Template, blank=True, null=True)
+	email_from = models.CharField(max_length=200, verbose_name=_("from"), default="noreply@%s" % Site.objects.get_current().domain)
 	email_users = models.ManyToManyField(User, blank=True, null=True)
 	email_groups = models.ManyToManyField(Group, blank=True, null=True)
 	save_to_database = models.BooleanField(default=True)
-	_form = None
-	
-	def __unicode__(self):
-		return self.title
+	is_anonymous = models.BooleanField(default=False)
 	
 	@property
 	def form(self):
-		if not self._form:
+		if not hasattr(self, '_form'):
 			self._form = databaseform_factory(self)
 		
 		return self._form
+	
+	def clean(self):
+		if (self.email_users.count() or self.email_groups.count()) and not self.email_template:
+			raise ValidationError('To send email, an email template must be provided.')
+	
+	class Meta:
+		ordering = ('id',)
+
+register_value_model(Form)
 
 """
 class FormItem(models.Model):
@@ -48,7 +60,7 @@ class Field(models.Model):
 	label = models.CharField(max_length=100)
 	help_text = models.CharField(max_length=100, blank=True)
 	required = models.BooleanField()
-	multiple = models.BooleanField(help_text="Allow multiple lines in a text field or choices in a choice field.")
+	multiple = models.BooleanField(help_text=_("Allow multiple lines in a text field or choices in a choice field."))
 	
 	def formfield(self):
 		# Make sure to pass in validators.
@@ -57,7 +69,7 @@ class Field(models.Model):
 			'required': self.required,
 			'help_text': self.help_text
 		}
-			
+		
 		if self.choices.count():
 			if self.multiple:
 				return forms.MultipleChoiceField(widget=forms.CheckboxSelectMultiple, **kwargs)
@@ -68,6 +80,9 @@ class Field(models.Model):
 			return forms.CharField(widget=forms.Textarea, **kwargs)
 		
 		return forms.CharField(**kwargs)
+	
+	class Meta:
+		unique_together = ('key', 'form')
 
 
 class FieldChoice(models.Model):
@@ -75,12 +90,15 @@ class FieldChoice(models.Model):
 	field = models.ForeignKey(Field, related_name="choices")
 	key = models.SlugField(max_length=20)
 	verbose_name = models.CharField(max_length=50)
+	order = models.PositiveSmallIntegerField()
 
 
 class ResultRow(models.Model):
 	form = models.ForeignKey(Form, related_name='result_rows')
 	submitted = models.DateTimeField()
-	user = models.ForeignKey(User, blank=True, null=True) # necessary?
+	user = models.ForeignKey(User, blank=True, null=True)
+	# Log the user's IP address for anonymous form submissions.
+	ip_address = models.IPAddressField(_('IP address'), blank=True, null=True)
 
 
 class FieldValue(models.Model):
