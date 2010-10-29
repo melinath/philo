@@ -7,7 +7,7 @@ from django.db import models
 from django.utils.translation import ugettext_lazy as _
 from philo.models import register_value_model, Entity, Titled, Template, ForeignKeyValue, ManyToManyValue
 from philo.models.fields import JSONField
-from philo.contrib.bartleby.forms import databaseform_factory
+from philo.contrib.bartleby.forms import databaseform_factory, POST_KEY
 
 
 #BLANK_CHOICE_DASH = [('', '---------')]
@@ -32,6 +32,9 @@ class Form(Entity, Titled):
 	
 	foreignkeyvalue_set = generic.GenericRelation(ForeignKeyValue)
 	
+	# Could have a TextField containing a list of forms to use as base classes... or one form class
+	# to use in place of databaseform
+	
 	@property
 	def form(self):
 		if not hasattr(self, '_form'):
@@ -43,6 +46,21 @@ class Form(Entity, Titled):
 	#def clean(self):
 	#	if self.pk and (self.email_users.count() or self.email_groups.count()) and not self.email_template:
 	#		raise ValidationError('To send email, an email template must be provided.')
+	
+	def is_available(self, request):
+		# Future: Allow custom validation scripts in a text field to run the request through and check.
+		return True
+	
+	def was_posted(self, request):
+		# Should this rely on a function imported from bartleby.forms so the code relying on POST_KEY is
+		# centralized?
+		if request.method == 'POST' and '%s-%s' % (self.slug, (POST_KEY % self.slug)) in request.POST:
+			return True
+		return False
+	
+	def get_email_recipients(self):
+		return User.objects.filter(models.Q(form_set=self) | models.Q(group_set__form_set=self))
+	email_recipients = property(get_email_recipients)
 	
 	class Meta:
 		ordering = ('id',)

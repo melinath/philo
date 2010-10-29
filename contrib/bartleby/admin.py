@@ -1,9 +1,10 @@
 from django.contrib import admin
 from philo.contrib.bartleby.models import *
 from philo.admin.base import COLLAPSE_CLASSES
+from philo.admin import EntityAdmin
 
 
-class ResultRowAdmin(admin.TabularInline):
+class ResultRowInline(admin.TabularInline):
 	model = ResultRow
 
 
@@ -18,8 +19,8 @@ class FieldInline(admin.StackedInline):
 	prepopulated_fields = {'key': ('label',)}
 
 
-class FormAdmin(admin.ModelAdmin):
-	inlines = [FieldInline]
+class FormAdmin(EntityAdmin):
+	inlines = [FieldInline, ResultRowInline] + EntityAdmin.inlines
 	fieldsets = (
 		(None, {
 			'fields': ('title', 'help_text'),
