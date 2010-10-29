@@ -29,7 +29,8 @@ class FormAdmin(admin.ModelAdmin):
 			'classes': COLLAPSE_CLASSES,
 		}),
 		('Advanced', {
-			'fields': ('is_anonymous', 'slug')
+			'fields': ('is_anonymous', 'slug'),
+			'classes': COLLAPSE_CLASSES,
 		})
 	)
 	filter_horizontal = ('email_users', 'email_groups')

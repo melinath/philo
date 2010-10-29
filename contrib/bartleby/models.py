@@ -5,7 +5,7 @@ from django.contrib.sites.models import Site
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
-from philo.models import register_value_model, Entity, Titled, Template
+from philo.models import register_value_model, Entity, Titled, Template, ForeignKeyValue, ManyToManyValue
 from philo.models.fields import JSONField
 from philo.contrib.bartleby.forms import databaseform_factory
 
@@ -24,11 +24,13 @@ class Form(Entity, Titled):
 	"""
 	help_text = models.TextField(blank=True)
 	email_template = models.ForeignKey(Template, blank=True, null=True)
-	email_from = models.CharField(max_length=200, verbose_name=_("from"), default="noreply@%s" % Site.objects.get_current().domain)
+	email_from = models.CharField(max_length=200, verbose_name=_("from"), default="noreply@%s" % Site.objects.get_current().domain, blank=True)
 	email_users = models.ManyToManyField(User, blank=True, null=True)
 	email_groups = models.ManyToManyField(Group, blank=True, null=True)
 	save_to_database = models.BooleanField(default=True)
 	is_anonymous = models.BooleanField(default=False)
+	
+	foreignkeyvalue_set = generic.GenericRelation(ForeignKeyValue)
 	
 	@property
 	def form(self):
@@ -37,9 +39,10 @@ class Form(Entity, Titled):
 		
 		return self._form
 	
-	def clean(self):
-		if (self.email_users.count() or self.email_groups.count()) and not self.email_template:
-			raise ValidationError('To send email, an email template must be provided.')
+	# cleaning like this doesn't work with the admin. the form saves m2m and fk later, so this is bypassed.
+	#def clean(self):
+	#	if self.pk and (self.email_users.count() or self.email_groups.count()) and not self.email_template:
+	#		raise ValidationError('To send email, an email template must be provided.')
 	
 	class Meta:
 		ordering = ('id',)
