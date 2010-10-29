@@ -46,7 +46,12 @@ def unregister_value_model(model):
 
 
 class AttributeValue(models.Model):
-	attribute = generic.GenericRelation('Attribute', content_type_field='value_content_type', object_id_field='value_object_id')
+	attribute_set = generic.GenericRelation('Attribute', content_type_field='value_content_type', object_id_field='value_object_id')
+	
+	@property
+	def attribute(self):
+		return self.attribute_set.all()[0]
+	
 	def apply_data(self, data):
 		raise NotImplementedError
 	
@@ -81,7 +86,7 @@ class JSONValue(AttributeValue):
 
 
 class ForeignKeyValue(AttributeValue):
-	content_type = models.ForeignKey(ContentType, related_name='foreign_key_value_set', limit_choices_to=value_content_type_limiter, verbose_name='Value type', null=True, blank=True)
+	content_type = models.ForeignKey(ContentType, limit_choices_to=value_content_type_limiter, verbose_name='Value type', null=True, blank=True)
 	object_id = models.PositiveIntegerField(verbose_name='Value ID', null=True, blank=True)
 	value = generic.GenericForeignKey()
 	
@@ -104,15 +109,14 @@ class ForeignKeyValue(AttributeValue):
 
 
 class ManyToManyValue(AttributeValue):
-	# TODO: Change object_ids to object_pks.
-	content_type = models.ForeignKey(ContentType, related_name='many_to_many_value_set', limit_choices_to=value_content_type_limiter, verbose_name='Value type', null=True, blank=True)
-	object_ids = models.CommaSeparatedIntegerField(max_length=300, verbose_name='Value IDs', null=True, blank=True)
+	content_type = models.ForeignKey(ContentType, limit_choices_to=value_content_type_limiter, verbose_name='Value type', null=True, blank=True)
+	values = models.ManyToManyField(ForeignKeyValue, blank=True, null=True)
 	
 	def get_object_id_list(self):
-		if not self.object_ids:
+		if not self.values.count():
 			return []
 		else:
-			return self.object_ids.split(',')
+			return self.values.values_list('object_id', flat=True)
 	
 	def get_value(self):
 		if self.content_type is None:
@@ -121,13 +125,23 @@ class ManyToManyValue(AttributeValue):
 		return self.content_type.model_class()._default_manager.filter(id__in=self.get_object_id_list())
 	
 	def set_value(self, value):
-		if value is None:
-			self.object_ids = ""
-			return
-		if not isinstance(value, models.query.QuerySet):
-			raise TypeError("Value must be a QuerySet.")
-		self.content_type = ContentType.objects.get_for_model(value.model)
-		self.object_ids = ','.join([`value` for value in value.values_list('id', flat=True)])
+		# Value is probably a queryset - but allow any iterable.
+		
+		# These lines shouldn't be necessary; however, if value is an EmptyQuerySet,
+		# the code won't work without them. Unclear why...
+		if not value:
+			value = []
+		
+		if isinstance(value, models.query.QuerySet):
+			value = value.values_list('id', flat=True)
+		
+		self.values.filter(~models.Q(object_id__in=value)).delete()
+		current = self.get_object_id_list()
+		
+		for v in value:
+			if v in current:
+				continue
+			self.values.create(content_type=self.content_type, object_id=v)
 	
 	value = property(get_value, set_value)
 	
@@ -143,7 +157,7 @@ class ManyToManyValue(AttributeValue):
 		else:
 			self.content_type = cleaned_data.get('content_type', None)
 			# If there is no value set in the cleaned data, clear the stored value.
-			self.object_ids = ""
+			self.value = []
 	
 	class Meta:
 		app_label = 'philo'
@@ -307,22 +321,15 @@ class TreeModel(models.Model):
 		return False
 	
 	def get_path(self, root=None, pathsep='/', field='slug'):
-		if root is not None:
-			if not self.has_ancestor(root):
-				raise AncestorDoesNotExist(root)
-			path = ''
-			parent = self
-			while parent and parent != root:
-				path = getattr(parent, field, '?') + pathsep + path
-				parent = parent.parent
-			return path
-		else:
-			path = getattr(self, field, '?')
-			parent = self.parent
-			while parent and parent != root:
-				path = getattr(parent, field, '?') + pathsep + path
-				parent = parent.parent
-			return path
+		if root is not None and not self.has_ancestor(root):
+			raise AncestorDoesNotExist(root)
+		
+		path = getattr(self, field, '?')
+		parent = self.parent
+		while parent and parent != root:
+			path = getattr(parent, field, '?') + pathsep + path
+			parent = parent.parent
+		return path
 	path = property(get_path)
 	
 	def __unicode__(self):
@@ -339,12 +346,6 @@ class TreeEntity(Entity, TreeModel):
 		if self.parent:
 			return QuerySetMapper(self.attribute_set, passthrough=self.parent.attributes)
 		return super(TreeEntity, self).attributes
-	
-	@property
-	def relationships(self):
-		if self.parent:
-			return QuerySetMapper(self.relationship_set, passthrough=self.parent.relationships)
-		return super(TreeEntity, self).relationships
 	
 	class Meta:
 		abstract = True

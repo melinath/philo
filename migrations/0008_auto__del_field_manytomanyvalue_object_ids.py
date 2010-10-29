@@ -8,62 +8,25 @@ class Migration(SchemaMigration):
 
     def forwards(self, orm):
         
-        # Adding model 'ManyToManyValue'
-        db.create_table('philo_manytomanyvalue', (
-            ('id', self.gf('django.db.models.fields.AutoField')(primary_key=True)),
-            ('content_type', self.gf('django.db.models.fields.related.ForeignKey')(blank=True, related_name='many_to_many_value_set', null=True, to=orm['contenttypes.ContentType'])),
-            ('object_ids', self.gf('django.db.models.fields.CommaSeparatedIntegerField')(max_length=300, null=True, blank=True)),
+        # Deleting field 'ManyToManyValue.object_ids'
+        db.delete_column('philo_manytomanyvalue', 'object_ids')
+
+        # Adding M2M table for field values on 'ManyToManyValue'
+        db.create_table('philo_manytomanyvalue_values', (
+            ('id', models.AutoField(verbose_name='ID', primary_key=True, auto_created=True)),
+            ('manytomanyvalue', models.ForeignKey(orm['philo.manytomanyvalue'], null=False)),
+            ('foreignkeyvalue', models.ForeignKey(orm['philo.foreignkeyvalue'], null=False))
         ))
-        db.send_create_signal('philo', ['ManyToManyValue'])
-
-        # Adding model 'JSONValue'
-        db.create_table('philo_jsonvalue', (
-            ('id', self.gf('django.db.models.fields.AutoField')(primary_key=True)),
-            ('value', self.gf('philo.models.fields.JSONField')()),
-        ))
-        db.send_create_signal('philo', ['JSONValue'])
-
-        # Adding model 'ForeignKeyValue'
-        db.create_table('philo_foreignkeyvalue', (
-            ('id', self.gf('django.db.models.fields.AutoField')(primary_key=True)),
-            ('content_type', self.gf('django.db.models.fields.related.ForeignKey')(blank=True, related_name='foreign_key_value_set', null=True, to=orm['contenttypes.ContentType'])),
-            ('object_id', self.gf('django.db.models.fields.PositiveIntegerField')(null=True, blank=True)),
-        ))
-        db.send_create_signal('philo', ['ForeignKeyValue'])
-
-        # Adding field 'Attribute.value_content_type'
-        db.add_column('philo_attribute', 'value_content_type', self.gf('django.db.models.fields.related.ForeignKey')(blank=True, related_name='attribute_value_set', null=True, to=orm['contenttypes.ContentType']), keep_default=False)
-
-        # Adding field 'Attribute.value_object_id'
-        db.add_column('philo_attribute', 'value_object_id', self.gf('django.db.models.fields.PositiveIntegerField')(null=True, blank=True), keep_default=False)
-
-        # Adding unique constraint on 'Attribute', fields ['value_object_id', 'value_content_type']
-        db.create_unique('philo_attribute', ['value_object_id', 'value_content_type_id'])
-
-        # Manual addition! This is necessary to immediately cause contenttype creation.
-        # (needed for the next migration)
-        db.send_pending_create_signals()
+        db.create_unique('philo_manytomanyvalue_values', ['manytomanyvalue_id', 'foreignkeyvalue_id'])
 
 
     def backwards(self, orm):
         
-        # Deleting model 'ManyToManyValue'
-        db.delete_table('philo_manytomanyvalue')
+        # Adding field 'ManyToManyValue.object_ids'
+        db.add_column('philo_manytomanyvalue', 'object_ids', self.gf('django.db.models.fields.CommaSeparatedIntegerField')(max_length=300, null=True, blank=True), keep_default=False)
 
-        # Deleting model 'JSONValue'
-        db.delete_table('philo_jsonvalue')
-
-        # Deleting model 'ForeignKeyValue'
-        db.delete_table('philo_foreignkeyvalue')
-
-        # Deleting field 'Attribute.value_content_type'
-        db.delete_column('philo_attribute', 'value_content_type_id')
-
-        # Deleting field 'Attribute.value_object_id'
-        db.delete_column('philo_attribute', 'value_object_id')
-
-        # Removing unique constraint on 'Attribute', fields ['value_object_id', 'value_content_type']
-        db.delete_unique('philo_attribute', ['value_object_id', 'value_content_type_id'])
+        # Removing M2M table for field values on 'ManyToManyValue'
+        db.delete_table('philo_manytomanyvalue_values')
 
 
     models = {
@@ -81,8 +44,7 @@ class Migration(SchemaMigration):
             'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
             'key': ('django.db.models.fields.CharField', [], {'max_length': '255'}),
             'value_content_type': ('django.db.models.fields.related.ForeignKey', [], {'blank': 'True', 'related_name': "'attribute_value_set'", 'null': 'True', 'to': "orm['contenttypes.ContentType']"}),
-            'value_object_id': ('django.db.models.fields.PositiveIntegerField', [], {'null': 'True', 'blank': 'True'}),
-            'value': ('philo.models.fields.JSONField', [], {})
+            'value_object_id': ('django.db.models.fields.PositiveIntegerField', [], {'null': 'True', 'blank': 'True'})
         },
         'philo.collection': {
             'Meta': {'object_name': 'Collection'},
@@ -134,7 +96,7 @@ class Migration(SchemaMigration):
             'Meta': {'object_name': 'ManyToManyValue'},
             'content_type': ('django.db.models.fields.related.ForeignKey', [], {'blank': 'True', 'related_name': "'many_to_many_value_set'", 'null': 'True', 'to': "orm['contenttypes.ContentType']"}),
             'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
-            'object_ids': ('django.db.models.fields.CommaSeparatedIntegerField', [], {'max_length': '300', 'null': 'True', 'blank': 'True'})
+            'values': ('django.db.models.fields.related.ManyToManyField', [], {'symmetrical': 'False', 'to': "orm['philo.ForeignKeyValue']", 'null': 'True', 'blank': 'True'})
         },
         'philo.node': {
             'Meta': {'object_name': 'Node'},
@@ -155,15 +117,6 @@ class Migration(SchemaMigration):
             'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
             'status_code': ('django.db.models.fields.IntegerField', [], {'default': '302'}),
             'target': ('django.db.models.fields.CharField', [], {'max_length': '200'})
-        },
-        'philo.relationship': {
-            'Meta': {'unique_together': "(('key', 'entity_content_type', 'entity_object_id'),)", 'object_name': 'Relationship'},
-            'entity_content_type': ('django.db.models.fields.related.ForeignKey', [], {'related_name': "'relationship_entity_set'", 'to': "orm['contenttypes.ContentType']"}),
-            'entity_object_id': ('django.db.models.fields.PositiveIntegerField', [], {}),
-            'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
-            'key': ('django.db.models.fields.CharField', [], {'max_length': '255'}),
-            'value_content_type': ('django.db.models.fields.related.ForeignKey', [], {'blank': 'True', 'related_name': "'relationship_value_set'", 'null': 'True', 'to': "orm['contenttypes.ContentType']"}),
-            'value_object_id': ('django.db.models.fields.PositiveIntegerField', [], {'null': 'True', 'blank': 'True'})
         },
         'philo.tag': {
             'Meta': {'object_name': 'Tag'},
