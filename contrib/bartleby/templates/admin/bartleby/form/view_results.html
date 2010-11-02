@@ -1,0 +1,59 @@
+{% extends "admin/base_site.html" %}
+
+<!-- LOADING -->
+{% load adminmedia admin_list i18n grp_tags %}
+
+<!-- JAVASCRIPTS -->
+{% block javascripts %}{% endblock %}
+
+<!-- COLTYPE/BODYCLASS -->
+{% block bodyclass %}change-list{% endblock %}
+{% block content-class %}content-flexible{% endblock %}
+
+<!-- BREADCRUMBS -->
+{% block breadcrumbs %}
+	{% if not is_popup %}
+		<div id="breadcrumbs">
+			<a href="../../../">{% trans "Home" %}</a> &rsaquo;
+			<a href="../../">{% trans app_label|capfirst|escape %}</a> &rsaquo;
+			<a href="../">Forms</a> &rsaquo;
+			Results
+		</div>
+	{% endif %}
+{% endblock %}
+
+<!-- CONTENT-TITLE -->
+{% block content_title %}{% endblock %}
+
+<!-- OBJECT-TOOLS -->
+{% block object-tools %}{% endblock %}
+
+<!-- CONTENT -->
+{% block content %}
+		<div id="changelist" class="container-full{% if forms.list_editable %} editable{% endif %}">
+			<!-- FORM RESULTS -->
+			{% for form in forms %}
+			<h1>Results for {{ form.form }}</h1>
+			<div class="module changelist-results">
+				<table cellspacing="0">
+					<thead>
+						<tr>
+							<th class="sortable"><!--a href="#"-->Poster<!--/a--></th>
+							<th class="sortable"><!--a href="#"-->Post time<!--/a--></th>{% for url, label in form %}
+							<th class="sortable"><!--a href="{{ url }}"-->{{ label }}<!--/a--></th>{% endfor %}
+							
+							{% comment %}{% for field in form.fields.all %}
+							<th class="sortable"><a href="#">{{ field.label }}</a></th>{% endfor %}{% endcomment %}
+						</tr>
+					</thead>
+					<tbody>{% for row in form.results %}
+						<tr class="{% cycle 'row1' 'row2' %}">
+							<td>{{ row.user }}</td>
+							<td>{{ row.submitted|date:"Y-m-d H:i:s" }}</td>
+							{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}
+					</tbody>
+				</table>
+			</div>
+			{% endfor %}
+		</div><br clear="all" />
+{% endblock %}

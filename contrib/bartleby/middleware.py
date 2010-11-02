@@ -51,6 +51,15 @@ class BartlebyFormMiddleware(object):
 				django_forms[form.slug] = form.form(request)
 		
 		view_kwargs['forms'] = django_forms
+		request._bartleby_forms = forms
+	
+	def process_response(self, request, response):
+		if hasattr(request, '_bartleby_forms'):
+			for form in request._bartleby_forms:
+				if form.cookie_key not in request.COOKIES:
+					response.set_cookie(form.cookie_key, value=form.get_cookie_value(), max_age=60*60*24*90)
+		
+		return response
 
 
 form_decorator = decorator_from_middleware(BartlebyFormMiddleware)
