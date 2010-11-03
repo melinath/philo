@@ -128,9 +128,14 @@ class ManyToManyValue(AttributeValue):
 		# Value is probably a queryset - but allow any iterable.
 		
 		# These lines shouldn't be necessary; however, if value is an EmptyQuerySet,
-		# the code won't work without them. Unclear why...
+		# the code (specifically the object_id__in query) won't work without them. Unclear why...
 		if not value:
 			value = []
+		
+		# Before we can fiddle with the many-to-many to foreignkeyvalues, we need
+		# a pk.
+		if self.pk is None:
+			self.save()
 		
 		if isinstance(value, models.query.QuerySet):
 			value = value.values_list('id', flat=True)
@@ -234,7 +239,7 @@ class Entity(models.Model):
 	
 	@property
 	def attributes(self):
-		return QuerySetMapper(self.attribute_set)
+		return QuerySetMapper(self.attribute_set.all())
 	
 	@property
 	def _added_attribute_registry(self):
@@ -344,7 +349,7 @@ class TreeEntity(Entity, TreeModel):
 	@property
 	def attributes(self):
 		if self.parent:
-			return QuerySetMapper(self.attribute_set, passthrough=self.parent.attributes)
+			return QuerySetMapper(self.attribute_set.all(), passthrough=self.parent.attributes)
 		return super(TreeEntity, self).attributes
 	
 	class Meta:
