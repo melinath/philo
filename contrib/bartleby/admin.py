@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect
@@ -45,7 +46,10 @@ class FormAdmin(EntityAdmin):
 	filter_horizontal = ('email_users', 'email_groups')
 	radio_fields = {'record': admin.VERTICAL}
 	prepopulated_fields = {'slug': ('title',)}
-	view_results_template = "admin/bartleby/form/view_results.html"
+	if 'grappelli' in settings.INSTALLED_APPS:
+		view_results_template = "admin/bartleby/form/grappelli_view_results.html"
+	else:
+		view_results_template = "admin/bartleby/form/view_results.html"
 	actions = ['results_redirect']
 	
 	def get_urls(self):
@@ -62,7 +66,7 @@ class FormAdmin(EntityAdmin):
 		return urlpatterns
 	
 	def view_results(self, request):
-		forms = [FormHelper(form, request.GET.get('ot%d' % i, None), request.GET.get('o%d' % i, None)) for i, form in enumerate(self.model._default_manager.filter(pk__in=request.GET['pks'].split(',')))]
+		forms = [FormHelper(form, index, request) for index, form in enumerate(self.model._default_manager.filter(pk__in=request.GET['pks'].split(',')))]
 		c = {
 			'forms': forms,
 			'app_label': self.model._meta.app_label,

@@ -162,6 +162,10 @@ class ResultRow(models.Model):
 		if self.user:
 			return "%s - %s - %s" % (self.user, self.form, self.submitted.strftime("%Y-%m-%d %H:%M:%S"))
 		return "%s - %s - %s" % (self.ip_address, self.form, self.submitted.strftime("%Y-%m-%d %H:%M:%S"))
+	
+	class Meta:
+		ordering = ['-submitted']
+		get_latest_by = 'submitted'
 
 
 class FieldValue(models.Model):

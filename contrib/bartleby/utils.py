@@ -30,11 +30,19 @@ def get_entity_forms(entity, passthrough=True):
 	
 	entity_ct = ContentType.objects.get_for_model(entity)
 	
-	fk_q = Q(foreignkeyvalue_set__attribute_set__entity_content_type=entity_ct) & Q(foreignkeyvalue_set__attribute_set__entity_object_id=entity.pk)
-	m2m_q = Q(foreignkeyvalue_set__manytomanyvalue__attribute_set__entity_content_type=entity_ct) & Q(foreignkeyvalue_set__manytomanyvalue__attribute_set__entity_object_id=entity.pk)
+	fk_q = Q(foreignkeyvalue_set__attribute_set__entity_content_type=entity_ct) &\
+		Q(foreignkeyvalue_set__attribute_set__entity_object_id=entity.pk)
+	m2m_q = Q(foreignkeyvalue_set__manytomanyvalue__attribute_set__entity_content_type=entity_ct) &\
+		Q(foreignkeyvalue_set__manytomanyvalue__attribute_set__entity_object_id=entity.pk)
 	
 	return Form.objects.filter(fk_q | m2m_q).distinct()
 
 
 def get_view_forms(view, node):
-	return get_entity_forms(view, passthrough=False) | get_entity_forms(node)
+	# Until http://code.djangoproject.com/ticket/14609 is resolved, the following line will not work.
+	#return get_entity_forms(view, passthrough=False) | get_entity_forms(node)
+	# WORKAROUND
+	view_pks = [form.pk for form in get_entity_forms(view, passthrough=False)]
+	node_pks = [form.pk for form in get_entity_forms(node)]
+	return Form.objects.filter(pk__in=view_pks + node_pks)
+	# END WORKAROUND

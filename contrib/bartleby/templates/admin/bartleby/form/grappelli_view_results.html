@@ -3,40 +3,17 @@
 <!-- LOADING -->
 {% load adminmedia admin_list i18n %}
 
-<!-- STYLES -->
-{% block extrastyle %}
-	{{ block.super }}
-	<link rel="stylesheet" type="text/css" href="{% admin_media_prefix %}css/changelists.css" />
-	{% if cl.formset %}
-		<link rel="stylesheet" type="text/css" href="{% admin_media_prefix %}css/forms.css" />
-	{% endif %}
-	{% if cl.formset or action_form %}
-		{% url admin:jsi18n as jsi18nurl %}
-		<script type="text/javascript" src="{{ jsi18nurl|default:'../../jsi18n/' }}"></script>
-	{% endif %}
-	{{ media.css }}
-	{% if not actions_on_top and not actions_on_bottom %}
-		<style>
-			#changelist table thead th:first-child {width: inherit}
-		</style>
-	{% endif %}
-	<style>
-		#changelist table tbody td:first-child{text-align:left;}
-	</style>
-{% endblock %}
-
 <!-- JAVASCRIPTS -->
 {% block javascripts %}{% endblock %}
 
 <!-- COLTYPE/BODYCLASS -->
 {% block bodyclass %}change-list{% endblock %}
-{% block coltype %}flex{% endblock %}
-{% comment %}{% block content-class %}content-flexible{% endblock %}{% endcomment %}
+{% block content-class %}content-flexible{% endblock %}
 
 <!-- BREADCRUMBS -->
 {% block breadcrumbs %}
 	{% if not is_popup %}
-		<div class="breadcrumbs">
+		<div id="breadcrumbs">
 			<a href="../../../">{% trans "Home" %}</a> &rsaquo;
 			<a href="../../">{% trans app_label|capfirst|escape %}</a> &rsaquo;
 			<a href="../">Forms</a> &rsaquo;
