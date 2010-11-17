@@ -193,10 +193,42 @@ class ManyToManyAttribute(ForeignKeyAttribute):
 		super(ManyToManyAttribute, self).set_attribute_value(attribute, value, value_class)
 
 
+class TemplateString(unicode):
+	origin = None
+
+
+class TemplateDescriptor(object):
+	def __init__(self, field):
+		self.field = field
+	
+	def __get__(self, instance, owner):
+		if instance is None:
+			raise AttributeError("Can only be accessed via an instance.")
+		return instance.__dict__[self.field.name]
+	
+	def __set__(self, instance, value):
+		value = self.field.to_python(value)
+		value.origin = instance
+		instance.__dict__[self.field.name] = value
+
+
 class TemplateField(models.TextField):
 	def __init__(self, allow=None, disallow=None, secure=True, *args, **kwargs):
 		super(TemplateField, self).__init__(*args, **kwargs)
 		self.validators.append(TemplateValidator(allow, disallow, secure))
+	
+	def to_python(self, value):
+		if isinstance(value, TemplateString):
+			return value
+		elif isinstance(value, basestring):
+			return TemplateString(value)
+		elif value is None:
+			return TemplateString()
+		raise TypeError
+	
+	def contribute_to_class(self, cls, name):
+		super(TemplateField, self).contribute_to_class(cls, name)
+		setattr(cls, name, TemplateDescriptor(self))
 
 
 class JSONFormField(forms.Field):
