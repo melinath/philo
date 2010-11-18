@@ -37,7 +37,11 @@ class Form(Entity, Titled):
 	help_text = models.TextField(blank=True)
 	
 	email_template = models.ForeignKey(Template, blank=True, null=True)
-	email_from = models.CharField(max_length=200, verbose_name=_("from"), default="noreply@%s" % Site.objects.get_current().domain, blank=True)
+	try:
+		email_from_default = "noreply@%s" % Site.objects.get_current().domain
+	except:
+		email_from_default = ""
+	email_from = models.CharField(max_length=200, verbose_name=_("from"), default=email_from_default, blank=True)
 	email_users = models.ManyToManyField(User, blank=True, null=True)
 	email_groups = models.ManyToManyField(Group, blank=True, null=True)
 	save_to_database = models.BooleanField(default=True)
