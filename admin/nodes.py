@@ -1,10 +1,14 @@
 from django.contrib import admin
-from philo.admin.base import EntityAdmin
+from philo.admin.base import EntityAdmin, TreeEntityAdmin
 from philo.models import Node, Redirect, File
 
 
-class NodeAdmin(EntityAdmin):
-	pass
+class NodeAdmin(TreeEntityAdmin):
+	list_display = ('slug', 'view', 'accepts_subpath')
+	
+	def accepts_subpath(self, obj):
+		return obj.accepts_subpath
+	accepts_subpath.boolean = True
 
 
 class ViewAdmin(EntityAdmin):

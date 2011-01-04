@@ -10,6 +10,7 @@ from philo.utils import ContentTypeRegistryLimiter, ContentTypeSubclassLimiter
 from philo.signals import entity_class_prepared
 from philo.validators import json_validator
 from UserDict import DictMixin
+from mptt.models import MPTTModel, MPTTModelBase, MPTTOptions
 
 
 class Tag(models.Model):
@@ -279,62 +280,142 @@ class Entity(models.Model):
 class TreeManager(models.Manager):
 	use_for_related_fields = True
 	
-	def roots(self):
-		return self.filter(parent__isnull=True)
-	
-	def get_with_path(self, path, root=None, absolute_result=True, pathsep='/'):
+	def get_with_path(self, path, root=None, absolute_result=True, pathsep='/', field='slug'):
 		"""
-		Returns the object with the path, or None if there is no object with that path,
-		unless absolute_result is set to False, in which case it returns a tuple containing
-		the deepest object found along the path, and the remainder of the path after that
-		object as a string (or None in the case that there is no remaining path).
+		Returns the object with the path, unless absolute_result is set to False, in which
+		case it returns a tuple containing the deepest object found along the path, and the
+		remainder of the path after that object as a string (or None if there is no remaining
+		path). Raises a DoesNotExist exception if no object is found with the given path.
+		
+		If the path you're searching for is known to exist, it is always faster to use
+		absolute_result=True - unless the path depth is over ~40, in which case the high cost
+		of the absolute query makes a binary search (i.e. non-absolute) faster.
 		"""
-		slugs = path.split(pathsep)
-		obj = root
-		remaining_slugs = list(slugs)
-		remainder = None
-		for slug in slugs:
-			remaining_slugs.remove(slug)
-			if slug: # ignore blank slugs, handles for multiple consecutive pathseps
-				try:
-					obj = self.get(slug__exact=slug, parent__exact=obj)
-				except self.model.DoesNotExist:
-					if absolute_result:
-						obj = None
-					remaining_slugs.insert(0, slug)
-					remainder = pathsep.join(remaining_slugs)
-					break
-		if obj:
-			if absolute_result:
-				return obj
+		# Note: SQLite allows max of 64 tables in one join. That means the binary search will
+		# only work on paths with a max depth of 127 and the absolute fetch will only work
+		# to a max depth of (surprise!) 63. Although this could be handled, chances are your
+		# tree structure won't be that deep.
+		segments = path.split(pathsep)
+		
+		# Check for a trailing pathsep so we can restore it later.
+		trailing_pathsep = False
+		if segments[-1] == '':
+			trailing_pathsep = True
+		
+		# Clean out blank segments. Handles multiple consecutive pathseps.
+		while True:
+			try:
+				segments.remove('')
+			except ValueError:
+				break
+		
+		# Special-case a lack of segments. No queries necessary.
+		if not segments:
+			if root is not None:
+				if absolute_result:
+					return root
+				return root, None
 			else:
-				return (obj, remainder)
-		raise self.model.DoesNotExist('%s matching query does not exist.' % self.model._meta.object_name)
+				raise self.model.DoesNotExist('%s matching query does not exist.' % self.model._meta.object_name)
+		
+		def make_query_kwargs(segments, root):
+			kwargs = {}
+			prefix = ""
+			revsegs = list(segments)
+			revsegs.reverse()
+			
+			for segment in revsegs:
+				kwargs["%s%s__exact" % (prefix, field)] = segment
+				prefix += "parent__"
+			
+			if prefix:
+				kwargs[prefix[:-2]] = root
+			
+			return kwargs
+		
+		def build_path(segments):
+			path = pathsep.join(segments)
+			if trailing_pathsep and segments and segments[-1] != '':
+				path += pathsep
+			return path
+		
+		def find_obj(segments, depth, deepest_found=None):
+			if deepest_found is None:
+				deepest_level = 0
+			elif root is None:
+				deepest_level = deepest_found.get_level() + 1
+			else:
+				deepest_level = deepest_found.get_level() - root.get_level()
+			try:
+				obj = self.get(**make_query_kwargs(segments[deepest_level:depth], deepest_found or root))
+			except self.model.DoesNotExist:
+				if not deepest_level and depth > 1:
+					# make sure there's a root node...
+					depth = 1
+				else:
+					# Try finding one with half the path since the deepest find.
+					depth = (deepest_level + depth)/2
+				
+				if deepest_level == depth:
+					# This should happen if nothing is found with any part of the given path.
+					if root is not None and deepest_found is None:
+						return root, build_path(segments)
+					raise
+				
+				return find_obj(segments, depth, deepest_found)
+			else:
+				# Yay! Found one!
+				if root is None:
+					deepest_level = obj.get_level() + 1
+				else:
+					deepest_level = obj.get_level() - root.get_level()
+				
+				# Could there be a deeper one?
+				if obj.is_leaf_node():
+					return obj, build_path(segments[deepest_level:]) or None
+				
+				depth += (len(segments) - depth)/2 or len(segments) - depth
+				
+				if depth > deepest_level + obj.get_descendant_count():
+					depth = deepest_level + obj.get_descendant_count()
+				
+				if deepest_level == depth:
+					return obj, build_path(segments[deepest_level:]) or None
+				
+				try:
+					return find_obj(segments, depth, obj)
+				except self.model.DoesNotExist:
+					# Then this was the deepest.
+					return obj, build_path(segments[deepest_level:])
+		
+		if absolute_result:
+			return self.get(**make_query_kwargs(segments, root))
+		
+		# Try a modified binary search algorithm. Feed the root in so that query complexity
+		# can be reduced. It might be possible to weight the search towards the beginning
+		# of the path, since short paths are more likely, but how far forward? It would
+		# need to shift depending on len(segments) - perhaps logarithmically?
+		return find_obj(segments, len(segments)/2 or len(segments))
 
 
-class TreeModel(models.Model):
+class TreeModel(MPTTModel):
 	objects = TreeManager()
 	parent = models.ForeignKey('self', related_name='children', null=True, blank=True)
 	slug = models.SlugField(max_length=255)
 	
-	def has_ancestor(self, ancestor):
-		parent = self
-		while parent:
-			if parent == ancestor:
-				return True
-			parent = parent.parent
-		return False
-	
 	def get_path(self, root=None, pathsep='/', field='slug'):
-		if root is not None and not self.has_ancestor(root):
+		if root == self:
+			return ''
+		
+		if root is not None and not self.is_descendant_of(root):
 			raise AncestorDoesNotExist(root)
 		
-		path = getattr(self, field, '?')
-		parent = self.parent
-		while parent and parent != root:
-			path = getattr(parent, field, '?') + pathsep + path
-			parent = parent.parent
-		return path
+		qs = self.get_ancestors()
+		
+		if root is not None:
+			qs = qs.filter(**{'%s__gt' % self._mptt_meta.level_attr: root.get_level()})
+		
+		return pathsep.join([getattr(parent, field, '?') for parent in list(qs) + [self]])
 	path = property(get_path)
 	
 	def __unicode__(self):
@@ -345,7 +426,17 @@ class TreeModel(models.Model):
 		abstract = True
 
 
+class TreeEntityBase(MPTTModelBase, EntityBase):
+	def __new__(meta, name, bases, attrs):
+		attrs['_mptt_meta'] = MPTTOptions(attrs.pop('MPTTMeta', None))
+		cls = EntityBase.__new__(meta, name, bases, attrs)
+		
+		return meta.register(cls)
+
+
 class TreeEntity(Entity, TreeModel):
+	__metaclass__ = TreeEntityBase
+	
 	@property
 	def attributes(self):
 		if self.parent:

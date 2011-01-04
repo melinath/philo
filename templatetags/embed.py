@@ -1,31 +1,147 @@
 from django import template
 from django.contrib.contenttypes.models import ContentType
 from django.conf import settings
+from django.template.loader_tags import ExtendsNode, BlockContext, BLOCK_CONTEXT_KEY, TextNode, BlockNode
 from philo.utils import LOADED_TEMPLATE_ATTR
 
 
 register = template.Library()
+EMBED_CONTEXT_KEY = 'embed_context'
+
+
+class EmbedContext(object):
+	"Inspired by django.template.loader_tags.BlockContext."
+	def __init__(self):
+		self.embeds = {}
+		self.rendered = []
+	
+	def add_embeds(self, embeds):
+		for content_type, embed_list in embeds.iteritems():
+			if content_type in self.embeds:
+				self.embeds[content_type] = embed_list + self.embeds[content_type]
+			else:
+				self.embeds[content_type] = embed_list
+	
+	def get_embed_template(self, embed, context):
+		"""To return a template for an embed node, find the node's position in the stack
+		and then progress up the stack until a template-defining node is found
+		"""
+		ct = embed.get_content_type(context)
+		embeds = self.embeds[ct]
+		embeds = embeds[:embeds.index(embed)][::-1]
+		for e in embeds:
+			template = e.get_template(context)
+			if template:
+				return template
+		
+		# No template was found in the current render_context - but perhaps one level up? Or more?
+		# We may be in an inclusion tag.
+		self_found = False
+		for context_dict in context.render_context.dicts[::-1]:
+			if not self_found:
+				if self in context_dict.values():
+					self_found = True
+					continue
+			elif EMBED_CONTEXT_KEY not in context_dict:
+				continue
+			else:
+				embed_context = context_dict[EMBED_CONTEXT_KEY]
+				# We can tell where we are in the list of embeds by which have already been rendered.
+				embeds = embed_context.embeds[ct][:len(embed_context.rendered)][::-1]
+				for e in embeds:
+					template = e.get_template(context)
+					if template:
+						return template
+		
+		raise IndexError
+
+
+# Override ExtendsNode render method to have it handle EmbedNodes
+# similarly to BlockNodes.
+old_extends_node_init = ExtendsNode.__init__
+
+
+def get_embed_dict(embed_list, context):
+	embeds = {}
+	for e in embed_list:
+		ct = e.get_content_type(context)
+		if ct is None:
+			# Then the embed doesn't exist for this context.
+			continue
+		if ct not in embeds:
+			embeds[ct] = [e]
+		else:
+			embeds[ct].append(e)
+	return embeds
+
+
+def extends_node_init(self, nodelist, *args, **kwargs):
+	self.embed_list = nodelist.get_nodes_by_type(ConstantEmbedNode)
+	old_extends_node_init(self, nodelist, *args, **kwargs)
+
+
+def render_extends_node(self, context):
+	compiled_parent = self.get_parent(context)
+	embeds = get_embed_dict(self.embed_list, context)
+	
+	if BLOCK_CONTEXT_KEY not in context.render_context:
+		context.render_context[BLOCK_CONTEXT_KEY] = BlockContext()
+	block_context = context.render_context[BLOCK_CONTEXT_KEY]
+	
+	if EMBED_CONTEXT_KEY not in context.render_context:
+		context.render_context[EMBED_CONTEXT_KEY] = EmbedContext()
+	embed_context = context.render_context[EMBED_CONTEXT_KEY]
+	
+	# Add the block nodes from this node to the block context
+	# Do the equivalent for embed nodes
+	block_context.add_blocks(self.blocks)
+	embed_context.add_embeds(embeds)
+	
+	# If this block's parent doesn't have an extends node it is the root,
+	# and its block nodes also need to be added to the block context.
+	for node in compiled_parent.nodelist:
+		# The ExtendsNode has to be the first non-text node.
+		if not isinstance(node, TextNode):
+			if not isinstance(node, ExtendsNode):
+				blocks = dict([(n.name, n) for n in compiled_parent.nodelist.get_nodes_by_type(BlockNode)])
+				block_context.add_blocks(blocks)
+				embeds = get_embed_dict(compiled_parent.nodelist.get_nodes_by_type(ConstantEmbedNode), context)
+				embed_context.add_embeds(embeds)
+			break
+	
+	# Explicitly render all direct embed children of this node.
+	if self.embed_list:
+		for node in self.nodelist:
+			if isinstance(node, ConstantEmbedNode):
+				node.render(context)
+	
+	# Call Template._render explicitly so the parser context stays
+	# the same.
+	return compiled_parent._render(context)
+
+
+ExtendsNode.__init__ = extends_node_init
+ExtendsNode.render = render_extends_node
 
 
 class ConstantEmbedNode(template.Node):
 	"""Analogous to the ConstantIncludeNode, this node precompiles several variables necessary for correct rendering - namely the referenced instance or the included template."""
-	def __init__(self, content_type, varname, object_pk=None, template_name=None, kwargs=None):
+	def __init__(self, content_type, object_pk=None, template_name=None, kwargs=None):
 		assert template_name is not None or object_pk is not None
 		self.content_type = content_type
-		self.varname = varname
 		
 		kwargs = kwargs or {}
 		for k, v in kwargs.items():
-			kwargs[k] = template.Variable(v)
+			kwargs[k] = v
 		self.kwargs = kwargs
 		
 		if object_pk is not None:
-			self.compile_instance(object_pk)
+			self.instance = self.compile_instance(object_pk)
 		else:
 			self.instance = None
 		
 		if template_name is not None:
-			self.compile_template(template_name[1:-1])
+			self.template = self.compile_template(template_name[1:-1])
 		else:
 			self.template = None
 	
@@ -33,89 +149,123 @@ class ConstantEmbedNode(template.Node):
 		self.object_pk = object_pk
 		model = self.content_type.model_class()
 		try:
-			self.instance = model.objects.get(pk=object_pk)
+			return model.objects.get(pk=object_pk)
 		except model.DoesNotExist:
 			if not hasattr(self, 'object_pk') and settings.TEMPLATE_DEBUG:
 				# Then it's a constant node.
 				raise
-			self.instance = False
+			return False
+	
+	def get_instance(self, context):
+		return self.instance
 	
 	def compile_template(self, template_name):
 		try:
-			self.template = template.loader.get_template(template_name)
+			return template.loader.get_template(template_name)
 		except template.TemplateDoesNotExist:
-			if not hasattr(self, 'template_name') and settings.TEMPLATE_DEBUG:
+			if hasattr(self, 'template') and settings.TEMPLATE_DEBUG:
 				# Then it's a constant node.
 				raise
-			self.template = False
+			return False
+	
+	def get_template(self, context):
+		return self.template
+	
+	def get_content_type(self, context):
+		return self.content_type
+	
+	def check_context(self, context):
+		if EMBED_CONTEXT_KEY not in context.render_context:
+			context.render_context[EMBED_CONTEXT_KEY] = EmbedContext()
+		embed_context = context.render_context[EMBED_CONTEXT_KEY]
+		
+		ct = self.get_content_type(context)
+		if ct not in embed_context.embeds:
+			embed_context.embeds[ct] = [self]
+		elif self not in embed_context.embeds[ct]:
+			embed_context.embeds[ct].append(self)
+	
+	def mark_rendered_for(self, context):
+		context.render_context[EMBED_CONTEXT_KEY].rendered.append(self)
 	
 	def render(self, context):
-		if self.template is not None:
-			if self.template is False:
+		self.check_context(context)
+		
+		template = self.get_template(context)
+		if template is not None:
+			self.mark_rendered_for(context)
+			if template is False:
 				return settings.TEMPLATE_STRING_IF_INVALID
-			
-			if self.varname not in context:
-				context[self.varname] = {}
-			context[self.varname][self.content_type] = self.template
-			
 			return ''
 		
-		# Otherwise self.instance should be set. Render the instance with the appropriate template!
-		if self.instance is None or self.instance is False:
+		# Otherwise an instance should be available. Render the instance with the appropriate template!
+		instance = self.get_instance(context)
+		if instance is None or instance is False:
+			self.mark_rendered_for(context)
 			return settings.TEMPLATE_STRING_IF_INVALID
 		
-		return self.render_template(context, self.instance)
+		return self.render_instance(context, instance)
 	
-	def render_template(self, context, instance):
+	def render_instance(self, context, instance):
 		try:
-			t = context[self.varname][self.content_type]
-		except KeyError:
+			t = context.render_context[EMBED_CONTEXT_KEY].get_embed_template(self, context)
+		except (KeyError, IndexError):
+			self.mark_rendered_for(context)
 			return settings.TEMPLATE_STRING_IF_INVALID
 		
 		context.push()
 		context['embedded'] = instance
-		kwargs = {}
 		for k, v in self.kwargs.items():
-			kwargs[k] = v.resolve(context)
-		context.update(kwargs)
+			context[k] = v.resolve(context)
 		t_rendered = t.render(context)
 		context.pop()
+		self.mark_rendered_for(context)
 		return t_rendered
 
 
 class EmbedNode(ConstantEmbedNode):
-	def __init__(self, content_type, varname, object_pk=None, template_name=None, kwargs=None):
+	def __init__(self, content_type, object_pk=None, template_name=None, kwargs=None):
 		assert template_name is not None or object_pk is not None
 		self.content_type = content_type
-		self.varname = varname
-		
-		kwargs = kwargs or {}
-		for k, v in kwargs.items():
-			kwargs[k] = template.Variable(v)
-		self.kwargs = kwargs
+		self.kwargs = kwargs or {}
 		
 		if object_pk is not None:
-			self.object_pk = template.Variable(object_pk)
+			self.object_pk = object_pk
 		else:
 			self.object_pk = None
-			self.instance = None
 		
 		if template_name is not None:
-			self.template_name = template.Variable(template_name)
+			self.template_name = template_name
 		else:
 			self.template_name = None
-			self.template = None
 	
-	def render(self, context):
-		if self.template_name is not None:
-			template_name = self.template_name.resolve(context)
-			self.compile_template(template_name)
-		
-		if self.object_pk is not None:
-			object_pk = self.object_pk.resolve(context)
-			self.compile_instance(object_pk)
-		
-		return super(EmbedNode, self).render(context)
+	def get_instance(self, context):
+		if self.object_pk is None:
+			return None
+		return self.compile_instance(self.object_pk.resolve(context))
+	
+	def get_template(self, context):
+		if self.template_name is None:
+			return None
+		return self.compile_template(self.template_name.resolve(context))
+
+
+class InstanceEmbedNode(EmbedNode):
+	def __init__(self, instance, kwargs=None):
+		self.instance = instance
+		self.kwargs = kwargs or {}
+	
+	def get_template(self, context):
+		return None
+	
+	def get_instance(self, context):
+		return self.instance.resolve(context)
+	
+	def get_content_type(self, context):
+		instance = self.get_instance(context)
+		if not instance:
+			return None
+		return ContentType.objects.get_for_model(instance)
 
 
 def get_embedded(self):
@@ -125,52 +275,63 @@ def get_embedded(self):
 setattr(ConstantEmbedNode, LOADED_TEMPLATE_ATTR, property(get_embedded))
 
 
+def get_content_type(bit):
+	try:
+		app_label, model = bit.split('.')
+	except ValueError:
+		raise template.TemplateSyntaxError('"%s" template tag expects the first argument to be of the form app_label.model' % tag)
+	try:
+		ct = ContentType.objects.get(app_label=app_label, model=model)
+	except ContentType.DoesNotExist:
+		raise template.TemplateSyntaxError('"%s" template tag requires an argument of the form app_label.model which refers to an installed content type (see django.contrib.contenttypes)' % tag)
+	return ct
+
+
 def do_embed(parser, token):
 	"""
-	The {% embed %} tag can be used in three ways:
-	{% embed as <varname> %} :: This sets which variable will be used to track embedding template names for the current context. Default: "embed"
+	The {% embed %} tag can be used in two ways:
 	{% embed <app_label>.<model_name> with <template> %} :: Sets which template will be used to render a particular model.
-	{% embed <app_label>.<model_name> <object_pk> [<argname>=<value> ...]%} :: Embeds the instance specified by the given parameters in the document with the previously-specified template. Any kwargs provided will be passed into the context of the template.
+	{% embed (<app_label>.<model_name> <object_pk> || <instance>) [<argname>=<value> ...] %} :: Embeds the instance specified by the given parameters in the document with the previously-specified template. Any kwargs provided will be passed into the context of the template.
 	"""
-	args = token.split_contents()
-	tag = args[0]
+	bits = token.split_contents()
+	tag = bits.pop(0)
 	
-	if len(args) < 2:
-		raise template.TemplateSyntaxError('"%s" template tag must have at least three arguments.' % tag)
-	elif len(args) == 3 and args[1] == "as":
-		parser._embedNodeVarName = args[2]
-		return template.defaulttags.CommentNode()
+	if len(bits) < 1:
+		raise template.TemplateSyntaxError('"%s" template tag must have at least two arguments.' % tag)
+	
+	if len(bits) == 3 and bits[-2] == 'with':
+		ct = get_content_type(bits[0])
+		
+		if bits[2][0] in ['"', "'"] and bits[2][0] == bits[2][-1]:
+			return ConstantEmbedNode(ct, template_name=bits[2])
+		return EmbedNode(ct, template_name=bits[2])
+	
+	# Otherwise they're trying to embed a certain instance.
+	kwargs = {}
+	try:
+		bit = bits.pop()
+		while '=' in bit:
+			k, v = bit.split('=')
+			kwargs[k] = parser.compile_filter(v)
+			bit = bits.pop()
+		bits.append(bit)
+	except IndexError:
+		raise template.TemplateSyntaxError('"%s" template tag expects at least one non-keyword argument when embedding instances.')
+	
+	if len(bits) == 1:
+		instance = parser.compile_filter(bits[0])
+		return InstanceEmbedNode(instance, kwargs)
+	elif len(bits) > 2:
+		raise template.TemplateSyntaxError('"%s" template tag expects at most 2 non-keyword arguments when embedding instances.')
+	ct = get_content_type(bits[0])
+	pk = bits[1]
+	
+	try:
+		int(pk)
+	except ValueError:
+		return EmbedNode(ct, object_pk=parser.compile_filter(pk), kwargs=kwargs)
 	else:
-		if '.' not in args[1]:
-			raise template.TemplateSyntaxError('"%s" template tag expects the first argument to be of the form app_label.model' % tag)
-		
-		app_label, model = args[1].split('.')
-		try:
-			ct = ContentType.objects.get(app_label=app_label, model=model)
-		except ContentType.DoesNotExist:
-			raise template.TemplateSyntaxError('"%s" template tag option "references" requires an argument of the form app_label.model which refers to an installed content type (see django.contrib.contenttypes)' % tag)
-		
-		varname = getattr(parser, '_embedNodeVarName', 'embed')
-		
-		if args[2] == "with":
-			if len(args) > 4:
-				raise template.TemplateSyntaxError('"%s" template tag may have no more than four arguments.' % tag)
-			
-			if args[3][0] in ['"', "'"] and args[3][0] == args[3][-1]:
-				return ConstantEmbedNode(ct, template_name=args[3], varname=varname)
-			
-			return EmbedNode(ct, template_name=args[3], varname=varname)
-		
-		object_pk = args[2]
-		remaining_args = args[3:]
-		kwargs = {}
-		for arg in remaining_args:
-			if '=' not in arg:
-				raise template.TemplateSyntaxError("Invalid keyword argument for '%s' template tag: %s" % (tag, arg))
-			k, v = arg.split('=')
-			kwargs[k] = v
-		
-		return EmbedNode(ct, object_pk=object_pk, varname=varname, kwargs=kwargs)
+		return ConstantEmbedNode(ct, object_pk=pk, kwargs=kwargs)
 
 
 register.tag('embed', do_embed)
