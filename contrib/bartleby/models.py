@@ -63,15 +63,6 @@ class Form(Entity, Titled):
 		
 		return self._form
 	
-	# cleaning like this doesn't work with the admin. the form saves m2m and fk later, so this is bypassed.
-	#def clean(self):
-	#	if self.pk and (self.email_users.count() or self.email_groups.count()) and not self.email_template:
-	#		raise ValidationError('To send email, an email template must be provided.')
-	
-	def is_available(self, request):
-		# Future: Allow custom validation scripts in a text field to run the request through and check.
-		return True
-	
 	def was_posted(self, request):
 		# Should this rely on a function imported from bartleby.forms so the code relying on POST_KEY is
 		# centralized?
@@ -89,7 +80,7 @@ class Form(Entity, Titled):
 		return sha_constructor(settings.SECRET_KEY + unicode(self.pk) + unicode(self.slug) + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).hexdigest()[::2]
 	
 	def get_email_recipients(self):
-		return User.objects.filter(models.Q(form_set=self) | models.Q(group_set__form_set=self))
+		return User.objects.filter(models.Q(form=self) | models.Q(groups__form=self))
 	email_recipients = property(get_email_recipients)
 	
 	class Meta:

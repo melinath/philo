@@ -5,15 +5,10 @@ because it is a form created based on database input.
 
 
 from django import forms
-from django.conf import settings
-from django.contrib.auth.models import User
-from django.contrib.sites.models import Site
 from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.db.models.fields import NOT_PROVIDED
-from django.template import Context
 from django.utils.datastructures import SortedDict
-import datetime
 
 
 POST_KEY = 'is_%s_form'
@@ -40,7 +35,7 @@ class DatabaseForm(forms.Form):
 		cleaned_data = super(DatabaseForm, self).clean()
 		request, instance = self.request, self.instance
 		
-		if request.method != 'POST':
+		if request.method != 'POST' or not cleaned_data[POST_KEY % instance.slug]:
 			raise ValidationError("The form must be posted.")
 		
 		if instance.login_required and not (hasattr(request, 'user') and request.user.is_authenticated()):
@@ -51,9 +46,11 @@ class DatabaseForm(forms.Form):
 		# or should there be native support? A "modified x times" field? an attribute?
 		if not instance.allow_changes and instance.max_submissions > 0:
 			try:
-				kwargs = self.get_record_kwargs()
+				kwargs = self._get_record_kwargs()
 			except KeyError:
 				# Then the cookie wasn't in request.COOKIES
+				# TODO: This is not how we should check if cookies are enabled...
+				# perhaps have a "has_valid_record" method?
 				raise ValidationError("Cookies must be enabled to use this form.")
 			
 			if instance.result_rows.filter(**kwargs).count() >= instance.max_submissions:
@@ -61,7 +58,7 @@ class DatabaseForm(forms.Form):
 		
 		return cleaned_data
 	
-	def get_record_kwargs(self):
+	def _get_record_kwargs(self):
 		"Return the kwargs necessary to fetch all rows for this instance's request and form instance."
 		if not hasattr(self, '_record_kwargs'):
 			from philo.contrib.bartleby.models import USER_CHOICE, IP_CHOICE
@@ -79,60 +76,16 @@ class DatabaseForm(forms.Form):
 				self._record_kwargs['cookie'] = request.COOKIES[instance.cookie_key]
 		
 		return self._record_kwargs
+	record_kwargs = property(_get_record_kwargs)
 	
-	def save(self):
-		# Save the result row for this form, if that's called for, and email the results to anyone
-		# slated to get an email.
-		if self.errors:
-			raise ValueError("The form could not be processed because the data didn't validate.")
-		
-		request, instance = self.request, self.instance
-		if not instance.save_to_database and not (instance.email_template and instance.email_recipients):
-			return
-		
-		fields = instance.fields.all()
-		field_values = [(field, self.cleaned_data.get(field.key, None)) for field in fields]
-		
-		if instance.save_to_database:
-			from philo.contrib.bartleby.models import ResultRow, FieldValue
-			
-			created = True
-			if instance.allow_changes:
-				try:
-					row = ResultRow.objects.filter(**self.get_record_kwargs()).latest()
-					created = False
-				except ResultRow.DoesNotExist:
-					row = ResultRow(**self.get_record_kwargs())
-			else:
-				row = ResultRow(**self.get_record_kwargs())
-			
-			row.submitted = datetime.datetime.now()
-			row.save()
-			
-			for field, val in field_values:
-				if created:
-					value = FieldValue(field=field, row=row)
-				else:
-					try:
-						value = FieldValue.objects.get(field=field, row=row)
-					except FieldValue.DoesNotExist:
-						value = FieldValue(field=field, row=row)
-				value.value = val
-				value.save()
-		
-		if instance.email_template and instance.email_recipients:
-			to_emails = instance.email_recipients.values_list('email', flat=True)
-			from_email = instance.from_email
-			subject = "[%s] Form Submission: %s" % (Site.objects.get_current().domain, instance.title)
-			t = self.email_template.django_template
-			
-			c = {
-				'data': field_values
-			}
-			
-			c.update(self.get_record_kwargs())
-			msg = t.render(Context(c))
-			send_mail(subject, msg, from_email, to_emails)
+	def process(self):
+		"""Get and merge receiver response dictionaries to make a dictionary appropriate for an ajax response."""
+		from philo.contrib.bartleby.signals import process_bartleby_form
+		response_dict = {}
+		responses = process_bartleby_form.send(sender=self.instance, form=self)
+		for receiver, value in responses:
+			response_dict.update(value or {})
+		return response_dict
 
 
 def field_dict_from_instance(instance):

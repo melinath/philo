@@ -3,6 +3,13 @@ from django.utils import simplejson as json
 from django.utils.decorators import decorator_from_middleware
 from philo.contrib.bartleby.utils import get_view_forms
 from philo.exceptions import MIDDLEWARE_NOT_CONFIGURED
+from philo.signals import view_about_to_render
+
+
+def add_forms_to_context(sender, request, extra_context, **kwargs):
+	if hasattr(request, '_bartleby_forms'):
+		extra_context['forms'] = request._bartleby_forms
+view_about_to_render.connect(add_forms_to_context)
 
 
 class BartlebyFormMiddleware(object):
@@ -13,51 +20,48 @@ class BartlebyFormMiddleware(object):
 		if not request.node:
 			return
 		
+		# XXX: Should forms really be inherited by views from nodes, anyway?
 		forms = get_view_forms(request.node.view, request.node)
 		
 		if not forms:
 			return
 		
-		django_forms = {}
+		db_forms = {}
 		
 		if request.method == 'POST':
-			all_valid = True
-			for form in forms:
-				if form.is_available(request) and form.was_posted(request):
-					form_instance = form.form(request, request.POST)
-					django_forms[form.slug] = form_instance
-				
-					if not form_instance.is_valid():
-						all_valid = False
+			ajax_response_dict = {}
 			
-			if all_valid:
-				for form in django_forms.values():
-					form.save()
-				if request.is_ajax():
-					# do something ajaxy - but what? maybe give the form a get_ajax_dict function and then
-					# have an ajax_dict which gets updated from each form, then return a dump of the results.
-					return HttpResponse(json.dumps({'errors': {}}))
+			for form in forms:
+				all_valid = True
+				if form.was_posted(request):
+					db_form = form.form(request, request.POST)
+					
+					if not db_form.is_valid():
+						all_valid = False
+					
+					if db_form.has_changed():
+						ajax_response_dict[db_form.prefix] = db_form.process()
 				else:
-					return HttpResponseRedirect('')
-			elif request.is_ajax():
-				errors = {}
-				for form in django_forms.values():
-					# This is fine because shared fields shouldn't be happening...
-					errors.update(form.errors)
-				return HttpResponse(json.dumps({'errors': errors}))
+					db_form = form.form(request)
+				
+				db_forms[form.slug] = db_form
+			
+			if request.is_ajax():
+				return HttpResponse(json.dumps(ajax_response_dict))
+			elif all_valid:
+				return HttpResponseRedirect('')
+		else:
+			for form in forms:
+				db_forms[form.slug] = db_form
 		
-		for form in forms:
-			if form.is_available(request) and (request.method != 'POST' or form.slug not in django_forms):
-				django_forms[form.slug] = form.form(request)
-		
-		view_kwargs['forms'] = django_forms
-		request._bartleby_forms = forms
+		request._bartleby_forms = db_forms
 	
 	def process_response(self, request, response):
 		if hasattr(request, '_bartleby_forms'):
-			for form in request._bartleby_forms:
-				if form.cookie_key not in request.COOKIES:
-					response.set_cookie(form.cookie_key, value=form.get_cookie_value(), max_age=60*60*24*90)
+			for db_form in request._bartleby_forms:
+				instance = db_form.instance
+				if instance.cookie_key not in request.COOKIES:
+					response.set_cookie(instance.cookie_key, value=instance.get_cookie_value(), max_age=60*60*24*90)
 		
 		return response
 
