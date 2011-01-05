@@ -8,11 +8,14 @@ from philo.signals import view_about_to_render
 
 def add_forms_to_context(sender, request, extra_context, **kwargs):
 	if hasattr(request, '_bartleby_forms'):
-		extra_context['forms'] = request._bartleby_forms
+		extra_context.update(request._bartleby_forms)
 view_about_to_render.connect(add_forms_to_context)
 
 
 class BartlebyFormMiddleware(object):
+	def __init__(self, form_var='forms'):
+		self.form_var = form_var
+	
 	def process_view(self, request, view_func, view_args, view_kwargs):
 		if not hasattr(request, 'node'):
 			raise MIDDLEWARE_NOT_CONFIGURED # Raise a more explicit error?
@@ -27,9 +30,9 @@ class BartlebyFormMiddleware(object):
 			return
 		
 		db_forms = {}
-		
 		if request.method == 'POST':
 			ajax_response_dict = {}
+			forms_to_process = []
 			
 			for form in forms:
 				all_valid = True
@@ -40,25 +43,30 @@ class BartlebyFormMiddleware(object):
 						all_valid = False
 					
 					if db_form.has_changed():
-						ajax_response_dict[db_form.prefix] = db_form.process()
+						forms_to_process.append(db_form)
 				else:
 					db_form = form.form(request)
 				
 				db_forms[form.slug] = db_form
 			
-			if request.is_ajax():
-				return HttpResponse(json.dumps(ajax_response_dict))
-			elif all_valid:
-				return HttpResponseRedirect('')
+			for db_form in forms_to_process:
+				if all_valid or not db_form.is_valid():
+					ajax_response_dict[db_form.prefix] = db_form.process()
+			
+			if forms_to_process:
+				if request.is_ajax():
+					return HttpResponse(json.dumps(ajax_response_dict))
+				elif all_valid:
+					return HttpResponseRedirect('')
 		else:
 			for form in forms:
-				db_forms[form.slug] = db_form
+				db_forms[form.slug] = form.form(request)
 		
-		request._bartleby_forms = db_forms
+		request._bartleby_forms = {self.form_var: db_forms}
 	
 	def process_response(self, request, response):
 		if hasattr(request, '_bartleby_forms'):
-			for db_form in request._bartleby_forms:
+			for db_form in request._bartleby_forms.get(self.form_var, {}).values():
 				instance = db_form.instance
 				if instance.cookie_key not in request.COOKIES:
 					response.set_cookie(instance.cookie_key, value=instance.get_cookie_value(), max_age=60*60*24*90)

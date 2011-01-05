@@ -113,10 +113,11 @@ class Field(models.Model):
 		}
 		
 		if self.choices.count():
+			choices = [(choice.key, choice.verbose_name) for choice in self.choices.all()]
 			if self.multiple:
-				return forms.MultipleChoiceField(widget=forms.CheckboxSelectMultiple, **kwargs)
+				return forms.MultipleChoiceField(widget=forms.CheckboxSelectMultiple, choices=choices, **kwargs)
 			else:
-				return forms.ChoiceField(widget=forms.RadioSelect, **kwargs)
+				return forms.ChoiceField(widget=forms.RadioSelect, choices=choices, **kwargs)
 		
 		if self.multiple:
 			return forms.CharField(widget=forms.Textarea, **kwargs)
@@ -171,6 +172,9 @@ class FieldValue(models.Model):
 	def clean(self):
 		if self.field.form != self.row.form:
 			raise ValidationError("That field and row are not related to the same form.")
+	
+	def __unicode__(self):
+		return "%s - %s - %s" % (self.value, self.field.key, self.row)
 	
 	class Meta:
 		unique_together = ('field', 'row',)

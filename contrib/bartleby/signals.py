@@ -1,5 +1,6 @@
 from philo.contrib.bartleby.models import ResultRow, FieldValue
 from django.contrib.sites.models import Site
+from django.core.mail import send_mail
 from django.dispatch import Signal
 from django.template import Template, Context
 import datetime
@@ -51,7 +52,7 @@ def email(sender, form, **kwargs):
 		return
 	
 	to_emails = sender.email_recipients.values_list('email', flat=True)
-	from_email = sender.from_email
+	from_email = sender.email_from
 	subject = "[%s] Form Submission: %s" % (Site.objects.get_current().domain, sender.title)
 	t = Template(sender.email_template.code)
 	
