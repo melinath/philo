@@ -1,40 +1,59 @@
 from django import forms
 from django.conf import settings
 from django.contrib.auth.models import User, Group
-from django.contrib.contenttypes import generic
 from django.contrib.sites.models import Site
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.utils.hashcompat import sha_constructor
 from django.utils.translation import ugettext_lazy as _
-from philo.models import register_value_model, Entity, Titled, Template, ForeignKeyValue, Page, ManyToManyAttribute
+from philo.models import register_value_model, Entity, Template, Page, QuerySetMapper
 from philo.models.fields import JSONField
-from philo.contrib.bartleby.forms import databaseform_factory, POST_KEY
+from philo.contrib.bartleby.forms import databaseform_factory, make_post_key
 import datetime
 
 
 #BLANK_CHOICE_DASH = [('', '---------')]
-USER_CHOICE = 'u'
-IP_CHOICE = 'i'
-NULL_CHOICE = 'n'
-FORM_RECORD_CHOICES = (
-	(USER_CHOICE, 'User/IP Address'),
-	(IP_CHOICE, 'IP Address'),
-	(NULL_CHOICE, 'Nothing')
-)
 
 
-class Form(Entity, Titled):
+class FormMapper(QuerySetMapper):
+	def __getitem__(self, key):
+		try:
+			return self.queryset.get(key__exact=key)
+		except ObjectDoesNotExist:
+			if self.passthrough is not None:
+				return self.passthrough.__getitem__(key)
+			raise KeyError
+
+
+def get_page_forms(page):
+	return FormMapper(page.form_set.all())
+Page.forms = property(get_page_forms)
+
+
+class Form(Entity):
 	"""
 	This model controls form-wide options such as data storage. In other words,
-	should the form have a title? Help text? Should data be stored in the database
-	or emailed to a set of users?
+	should the form have a title? Help text? Should data be stored in the
+	database or emailed to a set of users?
 	
 	It is important not to think of this as a django form. It is much more along
 	the lines of a google form.
 	"""
+	USER_CHOICE = 'u'
+	IP_CHOICE = 'i'
+	NULL_CHOICE = 'n'
+	FORM_RECORD_CHOICES = (
+		(USER_CHOICE, 'User/IP Address'),
+		(IP_CHOICE, 'IP Address'),
+		(NULL_CHOICE, 'Nothing')
+	)
+	
+	name = models.CharField(max_length=150)
+	key = models.CharField(max_length=150, unique=True, validators=[RegexValidator('^\w+$')], help_text="Underscores or alphanumeric characters.")
 	help_text = models.TextField(blank=True)
+	
+	pages = models.ManyToManyField(Page)
 	
 	email_template = models.ForeignKey(Template, blank=True, null=True)
 	try:
@@ -51,8 +70,6 @@ class Form(Entity, Titled):
 	allow_changes = models.BooleanField(default=False, help_text="Submitters will change their most recent submission instead of creating a new one.")
 	max_submissions = models.SmallIntegerField(default=1, validators=[MinValueValidator(0)], help_text="The maximum number of submissions allowed for a given user or IP Address. Set to 0 for unlimited.")
 	
-	foreignkeyvalue_set = generic.GenericRelation(ForeignKeyValue)
-	
 	# Could have a TextField containing a list of forms to use as base classes... or one form class
 	# to use in place of databaseform
 	
@@ -64,20 +81,18 @@ class Form(Entity, Titled):
 		return self._form
 	
 	def was_posted(self, request):
-		# Should this rely on a function imported from bartleby.forms so the code relying on POST_KEY is
-		# centralized?
-		if request.method == 'POST' and '%s-%s' % (self.slug, (POST_KEY % self.slug)) in request.POST:
+		if request.method == 'POST' and '%s-%s' % (self.key, make_post_key(self)) in request.POST:
 			return True
 		return False
 	
 	def get_cookie_key(self):
 		if not hasattr(self, '_cookie_key'):
-			self._cookie_key = sha_constructor(settings.SECRET_KEY + unicode(self.pk) + unicode(self.slug)).hexdigest()[::2]
+			self._cookie_key = sha_constructor(settings.SECRET_KEY + unicode(self.pk) + unicode(self.key)).hexdigest()[::2]
 		return self._cookie_key
 	cookie_key = property(get_cookie_key)
 	
 	def get_cookie_value(self):
-		return sha_constructor(settings.SECRET_KEY + unicode(self.pk) + unicode(self.slug) + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).hexdigest()[::2]
+		return sha_constructor(settings.SECRET_KEY + unicode(self.pk) + unicode(self.key) + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).hexdigest()[::2]
 	
 	def get_email_recipients(self):
 		return User.objects.filter(models.Q(form=self) | models.Q(groups__form=self))
@@ -95,7 +110,7 @@ class FormItem(models.Model):
 """
 
 class Field(models.Model):
-	key = models.SlugField(max_length=100) # necessary for form generation.
+	key = models.SlugField(max_length=100, db_index=True) # necessary for form generation.
 	form = models.ForeignKey(Form, related_name='fields')
 	order = models.PositiveSmallIntegerField()
 	
@@ -144,7 +159,6 @@ class FieldChoice(models.Model):
 
 
 class ResultRow(models.Model):
-	form = models.ForeignKey(Form, related_name='result_rows')
 	submitted = models.DateTimeField()
 	user = models.ForeignKey(User, blank=True, null=True)
 	
@@ -179,11 +193,3 @@ class FieldValue(models.Model):
 	class Meta:
 		unique_together = ('field', 'row',)
 		ordering = ['field__order']
-
-
-class FormPage(Page):
-	forms = ManyToManyAttribute(Form)
-	
-	class Meta:
-		proxy = True
-		app_label = 'philo'

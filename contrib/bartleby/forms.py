@@ -6,7 +6,6 @@ because it is a form created based on database input.
 
 from django import forms
 from django.core.exceptions import ValidationError
-from django.core.mail import send_mail
 from django.db.models.fields import NOT_PROVIDED
 from django.utils.datastructures import SortedDict
 
@@ -19,7 +18,7 @@ class DatabaseForm(forms.Form):
 	def __init__(self, request, data=None, files=None, auto_id='id_%s', prefix=NOT_PROVIDED, initial=None, *args, **kwargs):
 		self.request = request
 		if prefix is NOT_PROVIDED:
-			prefix = self.instance.slug
+			prefix = self.instance.key
 		if self.instance.allow_changes and self.instance.cookie_key in request.COOKIES:
 			from philo.contrib.bartleby.models import ResultRow
 			try:
@@ -35,7 +34,7 @@ class DatabaseForm(forms.Form):
 		cleaned_data = super(DatabaseForm, self).clean()
 		request, instance = self.request, self.instance
 		
-		if request.method != 'POST' or not cleaned_data[POST_KEY % instance.slug]:
+		if request.method != 'POST' or not cleaned_data[make_post_key(instance)]:
 			raise ValidationError("The form must be posted.")
 		
 		if instance.login_required and not (hasattr(request, 'user') and request.user.is_authenticated()):
@@ -88,6 +87,10 @@ class DatabaseForm(forms.Form):
 		return response_dict
 
 
+def make_post_key(form):
+	return POST_KEY % form.key
+
+
 def field_dict_from_instance(instance):
 	return SortedDict([(field.key, field.formfield()) for field in instance.fields.order_by('order')])
 
@@ -96,6 +99,6 @@ def databaseform_factory(instance, form=DatabaseForm):
 	attrs = field_dict_from_instance(instance)
 	attrs.update({
 		'instance': instance,
-		POST_KEY % instance.slug: forms.BooleanField(widget=forms.HiddenInput, initial=True)
+		make_post_key(instance): forms.BooleanField(widget=forms.HiddenInput, initial=True)
 	})
-	return forms.forms.DeclarativeFieldsMetaclass("%sForm" % str(instance.title.replace(' ', '')), (form,), attrs)
+	return forms.forms.DeclarativeFieldsMetaclass("%sForm" % str(instance.name.replace(' ', '')), (form,), attrs)

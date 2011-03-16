@@ -1,8 +1,8 @@
 from django.http import HttpResponseRedirect, HttpResponse
 from django.utils import simplejson as json
 from django.utils.decorators import decorator_from_middleware
-from philo.contrib.bartleby.utils import get_view_forms
 from philo.exceptions import MIDDLEWARE_NOT_CONFIGURED
+from philo.models import Page
 from philo.signals import view_about_to_render
 
 
@@ -23,8 +23,11 @@ class BartlebyFormMiddleware(object):
 		if not request.node:
 			return
 		
-		# XXX: Should forms really be inherited by views from nodes, anyway?
-		forms = get_view_forms(request.node.view, request.node)
+		# For now, only enable this middleware for Pages.
+		if not isinstance(request.node.view, Page):
+			return
+		
+		forms = request.node.view.form_set.all()
 		
 		if not forms:
 			return
@@ -47,7 +50,7 @@ class BartlebyFormMiddleware(object):
 				else:
 					db_form = form.form(request)
 				
-				db_forms[form.slug] = db_form
+				db_forms[form.key] = db_form
 			
 			for db_form in forms_to_process:
 				if all_valid or not db_form.is_valid():
@@ -60,7 +63,7 @@ class BartlebyFormMiddleware(object):
 					return HttpResponseRedirect('')
 		else:
 			for form in forms:
-				db_forms[form.slug] = form.form(request)
+				db_forms[form.key] = form.form(request)
 		
 		request._bartleby_forms = {self.form_var: db_forms}
 	

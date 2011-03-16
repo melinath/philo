@@ -13,10 +13,6 @@ from philo.admin import EntityAdmin, PageAdmin
 from philo.forms import EntityForm
 
 
-class ResultRowInline(admin.TabularInline):
-	model = ResultRow
-
-
 class FieldInline(admin.StackedInline):
 	model = Field
 	fieldsets = (
@@ -29,23 +25,23 @@ class FieldInline(admin.StackedInline):
 
 
 class FormAdmin(EntityAdmin):
-	inlines = [FieldInline, ResultRowInline] + EntityAdmin.inlines
+	inlines = [FieldInline] + EntityAdmin.inlines
 	fieldsets = (
 		(None, {
-			'fields': ('title', 'help_text'),
+			'fields': ('name', 'key', 'help_text', 'pages'),
 		}),
 		('Processing options', {
 			'fields': ('save_to_database', 'email_template', 'email_from', 'email_users', 'email_groups'),
 			'classes': COLLAPSE_CLASSES,
 		}),
 		('Advanced', {
-			'fields': ('record', 'login_required', 'allow_changes', 'max_submissions', 'slug'),
+			'fields': ('record', 'login_required', 'allow_changes', 'max_submissions'),
 			'classes': COLLAPSE_CLASSES,
 		})
 	)
-	filter_horizontal = ('email_users', 'email_groups')
+	filter_horizontal = ('email_users', 'email_groups', 'pages')
 	radio_fields = {'record': admin.VERTICAL}
-	prepopulated_fields = {'slug': ('title',)}
+	prepopulated_fields = {'key': ('name',)}
 	if 'grappelli' in settings.INSTALLED_APPS:
 		view_results_template = "admin/bartleby/form/grappelli_view_results.html"
 	else:
@@ -111,17 +107,6 @@ class ResultRowAdmin(admin.ModelAdmin):
 	inlines = [FieldValueInline]
 
 
-class FormPageForm(EntityForm):
-	class Meta:
-		model = FormPage
-
-
-class FormPageAdmin(PageAdmin):
-	form = FormPageForm
-	fieldsets = None
-
-
 admin.site.register(Form, FormAdmin)
 admin.site.register(Field, FieldAdmin)
 admin.site.register(ResultRow, ResultRowAdmin)
-admin.site.register(FormPage, FormPageAdmin)
