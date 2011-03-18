@@ -60,14 +60,14 @@ class DatabaseForm(forms.Form):
 	def _get_record_kwargs(self):
 		"Return the kwargs necessary to fetch all rows for this instance's request and form instance."
 		if not hasattr(self, '_record_kwargs'):
-			from philo.contrib.bartleby.models import USER_CHOICE, IP_CHOICE
 			request, instance = self.request, self.instance
+			Form = instance.__class__
 			
 			self._record_kwargs = {'form': instance}
 			
-			if instance.record == USER_CHOICE and hasattr(request, 'user') and request.user.is_authenticated():
+			if instance.record == Form.USER_CHOICE and hasattr(request, 'user') and request.user.is_authenticated():
 				self._record_kwargs['user'] = request.user
-			elif (instance.record == USER_CHOICE and hasattr(request, 'user')) or (instance.record == IP_CHOICE and 'REMOTE_ADDR' in request.META):
+			elif (instance.record == Form.USER_CHOICE and hasattr(request, 'user')) or (instance.record == Form.IP_CHOICE and 'REMOTE_ADDR' in request.META):
 				self._record_kwargs['ip_address'] = request.META['REMOTE_ADDR']
 			else:
 				# In all other cases, we have no way of knowing for sure whether someone's already posted

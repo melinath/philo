@@ -98,6 +98,9 @@ class Form(Entity):
 		return User.objects.filter(models.Q(form=self) | models.Q(groups__form=self))
 	email_recipients = property(get_email_recipients)
 	
+	def __unicode__(self):
+		return self.name
+	
 	class Meta:
 		ordering = ('id',)
 
@@ -159,6 +162,7 @@ class FieldChoice(models.Model):
 
 
 class ResultRow(models.Model):
+	form = models.ForeignKey(Form, related_name="result_rows")
 	submitted = models.DateTimeField()
 	user = models.ForeignKey(User, blank=True, null=True)
 	

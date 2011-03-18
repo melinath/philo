@@ -36,9 +36,9 @@ class BartlebyFormMiddleware(object):
 		if request.method == 'POST':
 			ajax_response_dict = {}
 			forms_to_process = []
+			all_valid = True
 			
 			for form in forms:
-				all_valid = True
 				if form.was_posted(request):
 					db_form = form.form(request, request.POST)
 					
