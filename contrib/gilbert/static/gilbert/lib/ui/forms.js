@@ -73,6 +73,64 @@ Gilbert.lib.ui.forms.ClearableComboBox = Ext.extend(Ext.form.ComboBox, {
 Ext.reg('gilbertclearablecombo', Gilbert.lib.ui.forms.ClearableComboBox);
 
 
+Gilbert.lib.ui.forms.MultipleChoiceField = Ext.extend(Ext.form.ComboBox, {
+	initComponent: function(){
+		Gilbert.lib.ui.forms.MultipleChoiceField.superclass.initComponent.call(this)
+		this.selectedRecords = new Ext.util.MixedCollection(false);
+		this.on('select', function(combo, record, index){
+			combo.selectRecord(record)
+		})
+	},
+	onRender: function(ct, position) {
+		Gilbert.lib.ui.forms.MultipleChoiceField.superclass.onRender.call(this, ct, position);
+		this.displayEl = Ext.DomHelper.append(this.wrap, {tag: 'ul'}, true);
+		this.displayEl.hide();
+		this.el.dom.removeAttribute('name');
+	},
+	onStoreLoad: function(store, records, options) {
+		this.store.each(function(record){
+			if (this.selectedRecords.containsKey(record.get(this.valueField))) this.store.remove(record);
+		}, this);
+	},
+	validateValue: function(val){
+		if (this.selectedRecords.getCount() === 0 && !this.allowBlank) {
+			this.markInvalid(this.blankText);
+			return false;
+		};
+		this.clearInvalid();
+		return true;
+	},
+	//clearValue: function(val){
+	//	
+	//},
+	selectRecord: function(record){
+		var val = record.data[this.valueField],
+			display = record.data[this.displayField];
+		
+		this.selectedRecords.add(val, record);
+		this.store.remove(record);
+		
+		
+		// Make a "box" that displays the item's name, then make a hidden field that's attached to it to store the value.
+		var box = new Ext.Component({
+			renderTo: this.displayEl,
+			autoEl: {tag: 'li'},
+			owner: this,
+			html: display,
+			hidden: new Ext.form.Hidden({
+				value: val,
+				name: (this.hiddenName || this.name),
+				renderTo: this.displayEl
+			})
+		});
+		this.displayEl.show();
+		box.show();
+		this.el.dom.value = "";
+	}
+});
+Ext.reg('gilbertmultiplechoicefield', Gilbert.lib.ui.forms.MultipleChoiceField);
+
+
 Gilbert.lib.ui.forms.ModelChoiceField = Ext.extend(Gilbert.lib.ui.forms.ClearableComboBox, {
 	
 	model_app_label: undefined,
@@ -135,10 +193,6 @@ Gilbert.lib.ui.forms.ModelChoiceField = Ext.extend(Gilbert.lib.ui.forms.Clearabl
 	
 });
 Ext.reg('gilbertmodelchoicefield', Gilbert.lib.ui.forms.ModelChoiceField);
-
-
-Gilbert.lib.ui.forms.MultipleChoiceField = Ext.extend(Ext.ux.form.SuperBoxSelect, {});
-Ext.reg('gilbertmultiplechoicefield', Gilbert.lib.ui.forms.MultipleChoiceField);
 
 
 Gilbert.lib.ui.forms.ModelMultipleChoiceField = Ext.extend(Gilbert.lib.ui.forms.MultipleChoiceField, {});
