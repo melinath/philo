@@ -53,11 +53,14 @@ def email(sender, form, **kwargs):
 	
 	to_emails = sender.email_recipients.values_list('email', flat=True)
 	from_email = sender.email_from
-	subject = "[%s] Form Submission: %s" % (Site.objects.get_current().domain, sender.title)
+	subject = "[%s] Form Submission: %s" % (Site.objects.get_current().domain, sender.name)
 	t = Template(sender.email_template.code)
 	
+	fields = sender.fields.all()
+	
 	c = {
-		'data': [(field, form.cleaned_data.get(field.key, None)) for field in sender.fields.all()]
+		'fields': dict([(field.key, field) for field in fields]),
+		'data': dict([(field.key, form.cleaned_data.get(field.key, None)) for field in fields])
 	}
 	c.update(form.record_kwargs)
 	msg = t.render(Context(c))
