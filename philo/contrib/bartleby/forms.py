@@ -8,6 +8,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models.fields import NOT_PROVIDED
 from django.utils.datastructures import SortedDict
+from formwizard.forms import SessionFormWizard
 
 
 POST_KEY = 'is_%s_form'
@@ -102,3 +103,16 @@ def databaseform_factory(instance, form=DatabaseForm):
 		make_post_key(instance): forms.BooleanField(widget=forms.HiddenInput, initial=True)
 	})
 	return forms.forms.DeclarativeFieldsMetaclass("%sForm" % str(instance.name.replace(' ', '')), (form,), attrs)
+
+
+class DatabaseFormWizard(SessionFormWizard):
+	def __init__(self, form_view, *args, **kwargs):
+		self.form_view = form_view
+		super(DatabaseFormWizard, self).__init__(*args, **kwargs)
+	
+	def done(self, request, storage, final_form_list, **kwargs):
+		extra_context = kwargs.get('extra_context', {})
+		return self.form_view.form_complete_page.render_to_response(request, extra_context=extra_context)
+	
+	def render(self, request, storage, form, **kwargs):
+		return self.form_view.form_display_page.render_to_response(request, extra_context=self.get_template_context(request, storage, form))

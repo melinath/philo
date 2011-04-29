@@ -1,5 +1,8 @@
+import datetime
+
 from django import forms
 from django.conf import settings
+from django.conf.urls.defaults import url, patterns
 from django.contrib.auth.models import User, Group
 from django.contrib.sites.models import Site
 from django.core.exceptions import ValidationError
@@ -7,28 +10,13 @@ from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.utils.hashcompat import sha_constructor
 from django.utils.translation import ugettext_lazy as _
-from philo.models import register_value_model, Entity, Template, Page, QuerySetMapper
+
+from philo.models import register_value_model, Entity, Template, Page, MultiView
 from philo.models.fields import JSONField
-from philo.contrib.bartleby.forms import databaseform_factory, make_post_key
-import datetime
+from philo.contrib.bartleby.forms import databaseform_factory, make_post_key, DatabaseFormWizard
 
 
 #BLANK_CHOICE_DASH = [('', '---------')]
-
-
-class FormMapper(QuerySetMapper):
-	def __getitem__(self, key):
-		try:
-			return self.queryset.get(key__exact=key)
-		except ObjectDoesNotExist:
-			if self.passthrough is not None:
-				return self.passthrough.__getitem__(key)
-			raise KeyError
-
-
-def get_page_forms(page):
-	return FormMapper(page.form_set.all())
-Page.forms = property(get_page_forms)
 
 
 class Form(Entity):
@@ -72,13 +60,6 @@ class Form(Entity):
 	
 	# Could have a TextField containing a list of forms to use as base classes... or one form class
 	# to use in place of databaseform
-	
-	@property
-	def form(self):
-		if not hasattr(self, '_form'):
-			self._form = databaseform_factory(self)
-		
-		return self._form
 	
 	def was_posted(self, request):
 		if request.method == 'POST' and '%s-%s' % (self.key, make_post_key(self)) in request.POST:
@@ -197,3 +178,42 @@ class FieldValue(models.Model):
 	class Meta:
 		unique_together = ('field', 'row',)
 		ordering = ['field__order']
+
+
+class FormView(MultiView):
+	form_display_page = models.ForeignKey(Page, related_name='form_display_related')
+	form_complete_page = models.ForeignKey(Page, related_name='form_complete_related')
+	forms = models.ManyToManyField(Form, through='FormStep')
+	
+	formwizard_class = DatabaseFormWizard
+	
+	@property
+	def urlpatterns(self):
+		urlpatterns = patterns('',
+			url(r'^$', self.form_view, 'form_view')
+		)
+		return urlpatterns
+	
+	def get_formwizard(self):
+		form_list = [step.get_form() for step in self.steps.all()]
+		return self.formwizard_class(self, form_list)
+	
+	def form_view(self, request, extra_context=None):
+		formwizard = self.get_formwizard()
+		context = extra_context or {}
+		return formwizard(request, extra_context=context)
+
+
+class FormStep(models.Model):
+	form = models.ForeignKey(Form)
+	multiview = models.ForeignKey(FormView, related_name='steps')
+	order = models.PositiveIntegerField()
+	name = models.CharField(max_length=50, blank=True)
+	
+	def get_form(self):
+		form = databaseform_factory(self.form)
+		return self.name and (self.name, form) or form
+	
+	class Meta:
+		unique_together = ('form', 'multiview')
+		ordering = ('order',)
