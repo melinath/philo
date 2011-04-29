@@ -7,7 +7,7 @@ from django.shortcuts import render_to_response
 from django.utils.functional import update_wrapper
 from django.utils.translation import ugettext_lazy as _
 from philo.contrib.bartleby.helpers import Form as FormHelper
-from philo.contrib.bartleby.models import *
+from philo.contrib.bartleby.models import Field, Form, FieldValue, ResultRow, FieldChoice, FormView, FormStep
 from philo.admin.base import COLLAPSE_CLASSES
 from philo.admin import EntityAdmin, PageAdmin
 from philo.forms import EntityForm
@@ -107,6 +107,18 @@ class ResultRowAdmin(admin.ModelAdmin):
 	inlines = [FieldValueInline]
 
 
+class FormStepInline(admin.TabularInline):
+	model = FormStep
+	sortable_field_name = 'order'
+	raw_id_fields = ('form',)
+
+
+class FormViewAdmin(EntityAdmin):
+	inlines = [FormStepInline]
+	raw_id_fields = ('form_display_page', 'form_complete_page')
+
+
 admin.site.register(Form, FormAdmin)
 admin.site.register(Field, FieldAdmin)
 admin.site.register(ResultRow, ResultRowAdmin)
+admin.site.register(FormView, FormViewAdmin)
