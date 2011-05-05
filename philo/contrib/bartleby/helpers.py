@@ -2,18 +2,23 @@ from django.utils.datastructures import SortedDict
 
 
 class Row(object):
-	def __init__(self, row, form):
-		self.form = form
+	def __init__(self, row, formview):
+		self.formview = formview
 		self.row = row
 		if row.user is not None:
 			self.user = row.user.get_full_name() or row.user.username
 		else:
 			self.user = row.ip_address
 		self.submitted = row.submitted
-		self.values = SortedDict([(value.field.key, value.value) for value in row.values.filter(field__key__in=form.fields).select_related('field')])
+		
+		values = row.values.filter(field__form__in=formview.form_steps.keys()).select_related('field', 'field__form')
+		self.values = {}
+		for value in values:
+			step = formview.form_steps[value.field.form]
+			self.values[(step.order, step.name, value.field.key)] = value.value
 	
 	def __iter__(self):
-		for key in self.form.fields:
+		for key in self.formview.fields:
 			yield self.values.get(key, "")
 
 
@@ -47,10 +52,18 @@ class Header(object):
 		return "sortable"
 
 
-class Form(object):
-	def __init__(self, form, index, request):
-		self.form = form
-		self.fields = SortedDict(form.fields.values_list('key', 'label'))
+class FormView(object):
+	def __init__(self, formview, index, request):
+		self.formview = formview
+		self.fields = SortedDict()
+		self.steps = formview.steps.select_related('form')
+		self.form_steps = {}
+		
+		for step in self.steps:
+			self.form_steps[step.form] = step
+			for key, label in step.form.fields.values_list('key', 'label'):
+				self.fields[(step.order, step.name, key)] = label
+		
 		self.index = index
 		self.request = request
 		
@@ -60,7 +73,7 @@ class Form(object):
 			order_dir = order_column = None
 		self.order_dir, self.order_column = order_dir, order_column
 		
-		self.headers = [Header(self, label, index + 1) for index, label in enumerate(['Poster', 'Post time'] + self.fields.values())]
+		self.headers = [Header(self, label, index + 1) for index, label in enumerate(['Submitter', 'Submit time'] + self.fields.values())]
 		
 		if order_dir is not None and order_column is not None:
 			if order_column == 1:
@@ -75,9 +88,9 @@ class Form(object):
 					args = ['-submitted']
 			
 			if order_column in [1,2]:
-				self.results = [Row(result_row, self) for result_row in form.result_rows.order_by(*args)]
+				self.results = [Row(result_row, self) for result_row in formview.result_rows.order_by(*args)]
 				return
-		self.results = [Row(result_row, self) for result_row in form.result_rows.all()]
+		self.results = [Row(result_row, self) for result_row in formview.result_rows.all()]
 	
 	def __iter__(self):
 		for label in self.fields.values():

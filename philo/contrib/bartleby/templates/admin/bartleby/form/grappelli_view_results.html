@@ -16,7 +16,7 @@
 		<div id="breadcrumbs">
 			<a href="../../../">{% trans "Home" %}</a> &rsaquo;
 			<a href="../../">{% trans app_label|capfirst|escape %}</a> &rsaquo;
-			<a href="../">Forms</a> &rsaquo;
+			<a href="../">Formviews</a> &rsaquo;
 			Results
 		</div>
 	{% endif %}
@@ -30,21 +30,21 @@
 
 <!-- CONTENT -->
 {% block content %}
-		<div id="changelist" class="container-full{% if forms.list_editable %} editable{% endif %}">
-			<!-- FORM RESULTS -->
-			{% for form in forms %}
-			<h1>Results for {{ form.form }}</h1>
+		<div id="changelist" class="container-full{% if formviews.list_editable %} editable{% endif %}">
+			<!-- FORMVIEW RESULTS -->
+			{% for formview in formviews %}
+			<h1>Results for {{ formview.formview }}</h1>
 			<div class="module changelist-results">
 				<table cellspacing="0">
 					<thead>
-						<tr>{% for header in form.headers %}
+						<tr>{% for header in formview.headers %}
 							<th class="{{ header.classes }}">{% if header.url %}<a href="{{ header.url }}">{% endif %}{{ header.label }}{% if header.url %}</a>{% endif %}</th>{% endfor %}
 							
-							{% comment %}{% for field in form.fields.all %}
+							{% comment %}{% for field in formview.fields.all %}
 							<th class="sortable"><a href="#">{{ field.label }}</a></th>{% endfor %}{% endcomment %}
 						</tr>
 					</thead>
-					<tbody>{% for row in form.results %}
+					<tbody>{% for row in formview.results %}
 						<tr class="{% cycle 'row1' 'row2' %}">
 							<td>{{ row.user }}</td>
 							<td>{{ row.submitted|date:"Y-m-d H:i:s" }}</td>

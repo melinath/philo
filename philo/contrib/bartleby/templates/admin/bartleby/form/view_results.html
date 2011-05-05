@@ -53,21 +53,21 @@
 
 <!-- CONTENT -->
 {% block content %}
-		<div id="changelist" class="container-full{% if forms.list_editable %} editable{% endif %}">
-			<!-- FORM RESULTS -->
-			{% for form in forms %}
-			<h1>Results for {{ form.form }}</h1>
-			<div class="module changelist-results">
-				<table cellspacing="0">
+	<div id="content-main">
+		{% if formviews %}
+		<div id="changelist" class="container-full">
+			<!-- FORMVIEW RESULTS -->
+			{% for formview in formviews %}
+			<h1>Results for {{ formview.formview }}</h1>
+			{% if formview.results %}
+			<div class="module results">
+				<table>
 					<thead>
-						<tr>{% for header in form.headers %}
-							<th class="{{ header.classes }}">{% if header.url %}<a href="{{ header.url }}">{% endif %}{{ header.label }}{% if header.url %}</a>{% endif %}</th>{% endfor %}
-							
-							{% comment %}{% for field in form.fields.all %}
-							<th class="sortable"><a href="#">{{ field.label }}</a></th>{% endfor %}{% endcomment %}
+						<tr>{% for header in formview.headers %}
+							<th scope="col" class="{{ header.classes }}">{% if header.url %}<a href="{{ header.url }}">{% endif %}{{ header.label }}{% if header.url %}</a>{% endif %}</th>{% endfor %}
 						</tr>
 					</thead>
-					<tbody>{% for row in form.results %}
+					<tbody>{% for row in formview.results %}
 						<tr class="{% cycle 'row1' 'row2' %}">
 							<td>{{ row.user }}</td>
 							<td>{{ row.submitted|date:"Y-m-d H:i:s" }}</td>
@@ -75,6 +75,9 @@
 					</tbody>
 				</table>
 			</div>
+			{% endif %}
 			{% endfor %}
-		</div><br clear="all" />
+		</div>
+		{% endif %}
+	</div>
 {% endblock %}

@@ -6,7 +6,8 @@ from django.template import RequestContext
 from django.shortcuts import render_to_response
 from django.utils.functional import update_wrapper
 from django.utils.translation import ugettext_lazy as _
-from philo.contrib.bartleby.helpers import Form as FormHelper
+
+from philo.contrib.bartleby.helpers import FormView as FormViewHelper
 from philo.contrib.bartleby.models import Field, Form, FieldValue, ResultRow, FieldChoice, FormView, FormStep
 from philo.admin.base import COLLAPSE_CLASSES
 from philo.admin import EntityAdmin, PageAdmin
@@ -104,9 +105,9 @@ class FormViewAdmin(EntityAdmin):
 		return urlpatterns
 	
 	def view_results(self, request):
-		forms = [FormHelper(form, index, request) for index, form in enumerate(self.model._default_manager.filter(pk__in=request.GET['pks'].split(',')))]
+		formviews = [FormViewHelper(formview, index, request) for index, formview in enumerate(self.model._default_manager.filter(pk__in=request.GET['pks'].split(',')))]
 		c = {
-			'forms': forms,
+			'formviews': formviews,
 			'app_label': self.model._meta.app_label,
 			'title': _('View form results')
 		}

@@ -1,0 +1,7 @@
+Submitter: {{ row.submitter }}
+Submitted: {{ row.submitted }}
+
+{% for form in forms %}
+{% for field in form %}
+{{ field.label }}: {{ field.data }}{% endfor %}
+{% endfor %}

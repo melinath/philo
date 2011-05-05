@@ -1,0 +1,37 @@
+{% load i18n %}
+{% if form %}
+<form action="" method="post">
+{% block form_inner %}
+{% csrf_token %}
+<table>
+	<tfoot>
+		<tr>
+			<td>
+				{% block form_footer %}
+				{% if form_prev_step %}
+				<button name="form_prev_step" value="{{ form_first_step }}">{% trans "First step" %}</button>
+				<button name="form_prev_step" value="{{ form_prev_step }}">{% trans "Previous step" %}</button>
+				{% endif %}
+				<input type="submit" name="submit" value="{% trans "Submit" %}" />
+				{% endblock %}
+			</td>
+		</tr>
+	</tfoot>
+	<tbody>
+		{% block form_body %}
+		{% include 'bartleby/form.html' %}
+		
+		{% comment %}{% if form.forms %}
+			{{ form.management_form }}
+			{% for fs in form.forms %}
+				{{ fs }}
+			{% endfor %}
+		{% else %}
+			{% include 'bartleby/form.html' %}
+		{% endif %}{% endcomment %}
+		{% endblock %}
+	</tbody>
+</table>
+{% endblock %}
+</form>
+{% endif %}

@@ -6,6 +6,7 @@ from django.conf.urls.defaults import url, patterns
 from django.contrib.auth.models import User, Group
 from django.contrib.sites.models import Site
 from django.core.exceptions import ValidationError, PermissionDenied
+from django.core.mail import send_mail
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.utils.hashcompat import sha_constructor
@@ -110,10 +111,12 @@ class ResultRow(models.Model):
 	# If that's too creepy for us, log a hashed cookie key.
 	cookie = models.CharField(max_length=20, blank=True)
 	
+	@property
+	def submitter(self):
+		return self.user or self.ip_address or self.cookie
+	
 	def __unicode__(self):
-		if self.user:
-			return "%s - %s - %s" % (self.user, self.form, self.submitted.strftime("%Y-%m-%d %H:%M:%S"))
-		return "%s - %s - %s" % (self.ip_address, self.form, self.submitted.strftime("%Y-%m-%d %H:%M:%S"))
+		return "%s - %s - %s" % (self.submitter, self.form_view, self.submitted.strftime("%Y-%m-%d %H:%M:%S"))
 	
 	class Meta:
 		ordering = ['-submitted']
@@ -148,7 +151,7 @@ class FormView(MultiView):
 	try:
 		results_email_sender_default = "noreply@%s" % Site.objects.get_current().domain
 	except:
-		results_email_sender_default = ""
+		results_email_sender_default = settings.SERVER_EMAIL
 	results_email_sender = models.CharField(max_length=200, verbose_name=_("from"), default=results_email_sender_default, blank=True)
 	email_users = models.ManyToManyField(User, blank=True, null=True)
 	email_groups = models.ManyToManyField(Group, blank=True, null=True)
@@ -171,6 +174,9 @@ class FormView(MultiView):
 	max_submissions = models.SmallIntegerField(default=1, validators=[MinValueValidator(0)], help_text="The maximum number of submissions allowed for a given user or IP Address. Set to 0 for unlimited.")
 	
 	formwizard_class = DatabaseFormWizard
+	
+	def __unicode__(self):
+		return self.name
 	
 	@property
 	def urlpatterns(self):
@@ -224,18 +230,56 @@ class FormView(MultiView):
 		# In all other cases, we have no way of knowing for sure whether someone's already posted
 		# unless we use cookies.
 		return {'cookie': request.COOKIES[self._get_cookie_key()]}
+	
+	def handle_submission(self, request, cleaned_forms, **kwargs):
+		row = self.record_submission(request, cleaned_forms)
+		
+		if self.results_email_page and self._get_email_recipients():
+			self.email_results(request, row, cleaned_forms)
+		
+		context = self.get_context()
+		context.update(kwargs.get('extra_context', {}))
+		context.update({
+			'row': row,
+			'forms': cleaned_forms
+		})
+		return self.form_complete_page.render_to_response(request, extra_context=context)
+	
+	def email_results(self, request, row, cleaned_forms):
+		to_emails = self._get_email_recipients().values_list('email', flat=True)
+		from_email = self.results_email_sender
+		subject = "[%s] Form Submission: %s" % (Site.objects.get_current().domain, self.name)
+		page = self.results_email_page
+		c = {
+			'row': row,
+			'forms': cleaned_forms,
+		}
+		msg = page.render_to_string(request=request, extra_context=c)
+		send_mail(subject, msg, from_email, to_emails)
+	
+	def record_submission(self, request, cleaned_forms):
+		row_kwargs = self._get_row_kwargs(request)
+		row = self.result_rows.create(submitted=datetime.datetime.now(), **row_kwargs)
+		
+		if cleaned_forms and self.save_to_database:
+			for form in cleaned_forms:
+				for field in form.instance.fields.all():
+					value = FieldValue(field=field, row=row)
+					value.value = form.cleaned_data.get(field.key, None)
+					value.save()
+		return row
 
 
 class FormStep(models.Model):
 	form = models.ForeignKey(Form)
 	multiview = models.ForeignKey(FormView, related_name='steps')
 	order = models.PositiveIntegerField()
-	name = models.CharField(max_length=50, blank=True)
+	name = models.SlugField(max_length=50, blank=True)
 	
 	def get_form(self):
 		form = databaseform_factory(self.form)
 		return self.name and (self.name, form) or form
 	
 	class Meta:
-		unique_together = ('form', 'multiview')
+		unique_together = (('form', 'multiview'), ('order', 'name', 'multiview'))
 		ordering = ('order',)
