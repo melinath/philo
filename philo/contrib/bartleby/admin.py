@@ -55,10 +55,25 @@ class FieldAdmin(admin.ModelAdmin):
 
 class FieldValueInline(admin.TabularInline):
 	model = FieldValue
+	raw_id_fields = ('field',)
 
 
 class ResultRowAdmin(admin.ModelAdmin):
 	inlines = [FieldValueInline]
+	list_display = ('submitter', 'form_view', 'submitted')
+	date_hierarchy = 'submitted'
+	readonly_fields = ('submitter',)
+	fieldsets = (
+		(None, {
+			'fields': ('submitter', 'submitted', 'form_view')
+		}),
+		('Advanced', {
+			'fields': ('user', 'ip_address', 'cookie',)
+		})
+	)
+	raw_id_fields = ('form_view', 'user')
+	search_fields = ('user__first_name', 'user__last_name', 'user__username', 'ip_address', 'cookie')
+	list_filter = ('form_view',)
 
 
 class FormStepInline(admin.TabularInline):
