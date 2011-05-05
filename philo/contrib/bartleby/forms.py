@@ -5,6 +5,9 @@ from django.utils.translation import ugettext_lazy as _
 from formwizard.forms import SessionFormWizard
 
 
+HONEYPOT_FIELD = '_hnypt_field'
+
+
 def field_dict_from_instance(instance):
 	return SortedDict([(field.key, field.formfield()) for field in instance.fields.order_by('order')])
 
@@ -26,7 +29,7 @@ def databaseform_factory(instance, form=forms.Form):
 	attrs = field_dict_from_instance(instance)
 	attrs.update({
 		'instance': instance,
-		'_honeypot_field': HoneyPotField()
+		HONEYPOT_FIELD: HoneyPotField()
 	})
 	return forms.forms.DeclarativeFieldsMetaclass("%sForm" % str(instance.name.replace(' ', '')), (form,), attrs)
 
@@ -38,6 +41,8 @@ class DatabaseFormWizard(SessionFormWizard):
 		super(DatabaseFormWizard, self).__init__(*args, **kwargs)
 	
 	def done(self, request, storage, final_form_list, **kwargs):
+		for form in final_form_list:
+			form.fields.pop(HONEYPOT_FIELD)
 		return self.form_view.handle_submission(request, final_form_list, **kwargs)
 	
 	def render(self, request, storage, form, **kwargs):

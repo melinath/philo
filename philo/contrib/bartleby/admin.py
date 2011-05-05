@@ -105,6 +105,7 @@ class FormViewAdmin(EntityAdmin):
 	else:
 		view_results_template = "admin/bartleby/form/view_results.html"
 	actions = ['results_redirect']
+	search_fields = ['name']
 	
 	def get_urls(self):
 		from django.conf.urls.defaults import patterns, url
