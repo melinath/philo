@@ -5,12 +5,14 @@ from django.db import models
 from django.utils import simplejson as json
 from django.utils.text import capfirst
 from django.utils.translation import ugettext_lazy as _
+
 from philo.forms.fields import JSONFormField
 from philo.validators import TemplateValidator, json_validator
 #from philo.models.fields.entities import *
 
 
 class TemplateField(models.TextField):
+	"""A :class:`TextField` which is validated with a :class:`.TemplateValidator`. ``allow``, ``disallow``, and ``secure`` will be passed into the validator's construction."""
 	def __init__(self, allow=None, disallow=None, secure=True, *args, **kwargs):
 		super(TemplateField, self).__init__(*args, **kwargs)
 		self.validators.append(TemplateValidator(allow, disallow, secure))
@@ -40,6 +42,7 @@ class JSONDescriptor(object):
 
 
 class JSONField(models.TextField):
+	"""A :class:`TextField` which stores its value on the model instance as a python object and stores its value in the database as JSON. Validated with :func:`.json_validator`."""
 	default_validators = [json_validator]
 	
 	def get_attname(self):
@@ -68,6 +71,7 @@ class JSONField(models.TextField):
 
 
 class SlugMultipleChoiceField(models.Field):
+	"""Stores a selection of multiple items with unique slugs in the form of a comma-separated list."""
 	__metaclass__ = models.SubfieldBase
 	description = _("Comma-separated slug field")
 	

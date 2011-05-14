@@ -9,10 +9,18 @@ Welcome to Philo's documentation!
 Contents:
 
 .. toctree::
-   :maxdepth: 2
-   
-   intro
-   models/intro
+	:maxdepth: 2
+	
+	intro
+	models/intro
+	exceptions
+	handling_requests
+	signals
+	validators
+	utilities
+	templatetags
+	forms
+	loaders
 
 Indices and tables
 ==================

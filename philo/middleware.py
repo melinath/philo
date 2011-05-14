@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib.sites.models import Site
 from django.http import Http404
+
 from philo.models import Node, View
 
 
@@ -43,7 +44,7 @@ class LazyNode(object):
 
 
 class RequestNodeMiddleware(object):
-	"""Middleware to process the request's path and attach the closest ancestor node."""
+	"""Adds a ``node`` attribute, representing the currently-viewed node, to every incoming :class:`HttpRequest` object. This is required by :func:`philo.views.node_view`."""
 	def process_request(self, request):
 		request.__class__.node = LazyNode()
 	

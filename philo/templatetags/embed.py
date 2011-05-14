@@ -1,7 +1,31 @@
+"""
+The embed template tags are automatically included as builtins if :mod:`philo` is an installed app.
+
+.. templatetag:: embed
+
+embed
+-----
+
+The {% embed %} tag can be used in two ways.
+
+First, to set which template will be used to render a particular model. This declaration can be placed in a base template and will propagate into all templates that extend that template.
+
+Syntax::
+
+	{% embed <app_label>.<model_name> with <template> %}
+
+Second, to embed a specific model instance in the document with a template specified earlier in the template or in a parent template using the first syntax. The instance can be specified as a content type and pk or as a context variable. Any kwargs provided will be passed into the context of the template.
+
+Syntax::
+
+	{% embed (<app_label>.<model_name> <object_pk> || <instance>) [<argname>=<value> ...] %}
+
+"""
 from django import template
-from django.contrib.contenttypes.models import ContentType
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.template.loader_tags import ExtendsNode, BlockContext, BLOCK_CONTEXT_KEY, TextNode, BlockNode
+
 from philo.utils import LOADED_TEMPLATE_ATTR
 
 
@@ -288,9 +312,9 @@ def parse_content_type(bit, tagname):
 
 def do_embed(parser, token):
 	"""
-	The {% embed %} tag can be used in two ways:
-	{% embed <app_label>.<model_name> with <template> %} :: Sets which template will be used to render a particular model.
-	{% embed (<app_label>.<model_name> <object_pk> || <instance>) [<argname>=<value> ...] %} :: Embeds the instance specified by the given parameters in the document with the previously-specified template. Any kwargs provided will be passed into the context of the template.
+	{% embed <app_label>.<model_name> with <template> %}
+	{% embed (<app_label>.<model_name> <object_pk> || <instance>) [<argname>=<value> ...] %}
+	
 	"""
 	bits = token.split_contents()
 	tag = bits.pop(0)
