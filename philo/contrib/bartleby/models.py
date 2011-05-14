@@ -21,17 +21,9 @@ from philo.contrib.bartleby.forms import databaseform_factory, DatabaseFormWizar
 
 
 class Form(Entity):
-	"""
-	This model controls form-wide options such as data storage. In other words,
-	should the form have a title? Help text? Should data be stored in the
-	database or emailed to a set of users?
-	
-	It is important not to think of this as a django form. It is much more along
-	the lines of a google form.
-	"""
+	"""The :class:`Form` model represents a collection of field configurations, much like a django form, but stored in the database."""
 	
 	name = models.CharField(max_length=150)
-	key = models.CharField(max_length=150, unique=True, validators=[RegexValidator('^\w+$')], help_text="Underscores or alphanumeric characters.")
 	help_text = models.TextField(blank=True)
 	
 	# Could have a TextField containing a list of forms to use as base classes... or one form class
@@ -52,12 +44,12 @@ class FormItem(models.Model):
 """
 
 class Field(models.Model):
-	key = models.SlugField(max_length=100, db_index=True) # necessary for form generation.
+	key = models.SlugField(max_length=50, db_index=True) # necessary for form generation.
 	form = models.ForeignKey(Form, related_name='fields')
 	order = models.PositiveSmallIntegerField()
 	
-	label = models.CharField(max_length=100)
-	help_text = models.CharField(max_length=100, blank=True)
+	label = models.CharField(max_length=255)
+	help_text = models.CharField(max_length=255, blank=True)
 	required = models.BooleanField()
 	multiple = models.BooleanField(help_text=_("Allow multiple lines in a text field or choices in a choice field."))
 	
@@ -69,8 +61,9 @@ class Field(models.Model):
 			'help_text': self.help_text
 		}
 		
-		if self.choices.count():
-			choices = [(choice.key, choice.verbose_name) for choice in self.choices.all()]
+		choices = self.choices.all()
+		if choices:
+			choices = [(choice.key, choice.verbose_name) for choice in choices]
 			if self.multiple:
 				return forms.MultipleChoiceField(widget=forms.CheckboxSelectMultiple, choices=choices, **kwargs)
 			else:
