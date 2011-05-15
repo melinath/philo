@@ -27,7 +27,6 @@ class FieldInline(admin.StackedInline):
 
 class FormAdmin(EntityAdmin):
 	inlines = [FieldInline] + EntityAdmin.inlines
-	prepopulated_fields = {'key': ('name',)}
 
 
 class FieldChoiceInline(admin.TabularInline):
