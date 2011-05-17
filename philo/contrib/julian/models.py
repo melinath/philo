@@ -10,7 +10,7 @@ from django.contrib.sites.models import Site
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.core.validators import RegexValidator
 from django.db import models
-from django.db.models.query import QuerySet
+from django.db.models.query import QuerySet, Q
 from django.http import HttpResponse, Http404
 from django.utils.encoding import force_unicode
 
@@ -97,16 +97,37 @@ class EventManager(models.Manager):
 		return EventQuerySet(self.model)
 
 class EventQuerySet(QuerySet):
+	def timespan(self, start=None, end=None):
+		"""Returns a :class:`QuerySet` of all objects which start before the end or end after the start. The filter will take care of matching ``NULL`` start/end times."""
+		q_filter = Q()
+		
+		if end is not None:
+			q_filter |= ~Q(start_date__gt=end, start_time__gt=end, start_time__isnull=False)
+			q_filter |= ~Q(start_date__gt=end, start_time__isnull=True)
+		
+		if start is not None:
+			q_filter |= ~Q(end_date__lt=start, end_time__lt=start)#, end_time__isnull=False)
+			#q_filter |= ~Q(end_date__lt=start, end_time__isnull=True)
+		
+		return self.filter(q_filter)
+	
 	def upcoming(self):
-		return self.filter(start_date__gte=datetime.date.today())
+		return self.timespan(start=datetime.datetime.now())
+	
 	def current(self):
-		return self.filter(start_date__lte=datetime.date.today(), end_date__gte=datetime.date.today())
+		now = datetime.datetime.now()
+		qs = self.exclude(start_date__gt=now).exclude(start_date=now, start_time__gt=now)
+		qs = qs.exclude(end_date__lt=now).exclude(end_date=now, end_time__lt=now)
+		return qs
+	
 	def single_day(self):
-		return self.filter(start_date__exact=models.F('end_date'))
+		return self.filter(start_date=models.F('end_date'))
+	
 	def multiday(self):
-		return self.exclude(start_date__exact=models.F('end_date'))
+		return self.exclude(start_date=models.F('end_date'))
 
 class Event(Entity, TimedModel):
+	objects = EventManager()
 	name = models.CharField(max_length=255)
 	slug = models.SlugField(max_length=255, unique_for_date='start_date')
 	
@@ -131,8 +152,6 @@ class Event(Entity, TimedModel):
 	@property
 	def uuid(self):
 		return "%s@%s" % (self.created.isoformat(), getattr(self.site, 'domain', 'None'))
-	
-	objects = EventManager()
 	
 	def __unicode__(self):
 		return self.name
@@ -163,11 +182,24 @@ class Calendar(Entity):
 
 
 class CalendarView(FeedView):
+	DAY = 1
+	WEEK = 7
+	MONTH = 28
+	TIMESPAN_CHOICES = (
+		(DAY, 'Day'),
+		(WEEK, 'Week'),
+		(MONTH, 'Month')
+	)
+	DURATION_GET_PARAMS = {
+		'day': DAY,
+		'week': WEEK,
+		'month': MONTH
+	}
+	DATE_FORMAT = "%Y-%m-%d"
 	calendar = models.ForeignKey(Calendar)
-	index_page = models.ForeignKey(Page, related_name="calendar_index_related")
 	event_detail_page = models.ForeignKey(Page, related_name="calendar_detail_related")
 	
-	timespan_page = models.ForeignKey(Page, related_name="calendar_timespan_related", blank=True, null=True)
+	index_page = models.ForeignKey(Page, related_name="calendar_index_related")
 	tag_page = models.ForeignKey(Page, related_name="calendar_tag_related", blank=True, null=True)
 	location_page = models.ForeignKey(Page, related_name="calendar_location_related", blank=True, null=True)
 	owner_page = models.ForeignKey(Page, related_name="calendar_owner_related", blank=True, null=True)
@@ -179,6 +211,8 @@ class CalendarView(FeedView):
 	tag_permalink_base = models.CharField(max_length=30, default='tags')
 	owner_permalink_base = models.CharField(max_length=30, default='owners')
 	location_permalink_base = models.CharField(max_length=30, default='locations')
+	
+	default_duration = models.PositiveIntegerField(max_length=5, choices=TIMESPAN_CHOICES, default=WEEK)
 	events_per_page = models.PositiveIntegerField(blank=True, null=True)
 	
 	item_context_var = "events"
@@ -200,28 +234,23 @@ class CalendarView(FeedView):
 			return 'entries_by_tag', [], {'tag_slugs': '/'.join(obj)}
 		raise ViewCanNotProvideSubpath
 	
-	def timespan_patterns(self, pattern, timespan_name):
-		return self.feed_patterns(pattern, 'get_events_by_timespan', 'timespan_page', "events_by_%s" % timespan_name)
-	
 	@property
 	def urlpatterns(self):
 		# Perhaps timespans should be done with GET parameters? Or two /-separated
 		# date slugs? (e.g. 2010-02-1/2010-02-2) or a start and duration?
 		# (e.g. 2010-02-01/week/ or ?d=2010-02-01&l=week)
-		urlpatterns = self.feed_patterns(r'^', 'get_all_events', 'index_page', 'index') + \
-			self.timespan_patterns(r'^(?P<year>\d{4})', 'year') + \
-			self.timespan_patterns(r'^(?P<year>\d{4})/(?P<month>\d{2})', 'month') + \
-			self.timespan_patterns(r'^(?P<year>\d{4})/(?P<month>\d{2})/(?P<day>\d{2})', 'day') + \
-			self.feed_patterns(r'^%s/(?P<username>[^/]+)' % self.owner_permalink_base, 'get_events_by_owner', 'owner_page', 'events_by_user') + \
-			self.feed_patterns(r'^%s/(?P<app_label>\w+)/(?P<model>\w+)/(?P<pk>[^/]+)' % self.location_permalink_base, 'get_events_by_location', 'location_page', 'events_by_location') + \
-			self.feed_patterns(r'^%s/(?P<tag_slugs>[-\w]+[-+/\w]*)' % self.tag_permalink_base, 'get_events_by_tag', 'tag_page', 'events_by_tag') + \
-			patterns('',
+		urlpatterns = self.feed_patterns(r'^', 'get_all_events', 'index_page', 'index')
+		urlpatterns += self.feed_patterns(r'^%s/(?P<username>[^/]+)' % self.owner_permalink_base, 'get_events_by_owner', 'owner_page', 'events_by_user')
+		urlpatterns += self.feed_patterns(r'^%s/(?P<app_label>\w+)/(?P<model>\w+)/(?P<pk>[^/]+)' % self.location_permalink_base, 'get_events_by_location', 'location_page', 'events_by_location')
+		# Some sort of shortcut for a location would be useful so we wouldn't have to reference it by app_label/model/pk.
+		# This could be on a per-calendar or per-calendar-view basis. Perhaps slug w/ automated disambiguation? Or
+		# a LocationShortcut model?
+		#url(r'^%s/(?P<slug>[\w-]+)' % self.location_permalink_base, ...)
+		urlpatterns += self.feed_patterns(r'^%s/(?P<tag_slugs>[-\w]+[-+/\w]*)' % self.tag_permalink_base, 'get_events_by_tag', 'tag_page', 'events_by_tag')
+		
+		urlpatterns += patterns('',
 				url(r'(?P<year>\d{4})/(?P<month>\d{2})/(?P<day>\d{2})/(?P<slug>[\w-]+)$', self.event_detail_view, name="event_detail"),
 			)
-			
-			# Some sort of shortcut for a location would be useful. This could be on a per-calendar
-			# or per-calendar-view basis.
-			#url(r'^%s/(?P<slug>[\w-]+)' % self.location_permalink_base, ...)
 		
 		if self.tag_archive_page:
 			urlpatterns += patterns('',
@@ -239,27 +268,43 @@ class CalendarView(FeedView):
 			)
 		return urlpatterns
 	
+	
 	# Basic QuerySet fetchers.
 	def get_event_queryset(self):
 		return self.calendar.events.all()
 	
-	def get_timespan_queryset(self, year, month=None, day=None):
-		qs = self.get_event_queryset()
-		# See python documentation for the min/max values.
-		if year and month and day:
-			year, month, day = int(year), int(month), int(day)
-			start_datetime = datetime.datetime(year, month, day, 0, 0)
-			end_datetime = datetime.datetime(year, month, day, 23, 59)
-		elif year and month:
-			year, month = int(year), int(month)
-			start_datetime = datetime.datetime(year, month, 1, 0, 0)
-			end_datetime = datetime.datetime(year, month, calendar.monthrange(year, month)[1], 23, 59)
-		else:
-			year = int(year)
-			start_datetime = datetime.datetime(year, 1, 1, 0, 0)
-			end_datetime = datetime.datetime(year, 12, 31, 23, 59)
+	def get_request_timespan(self, request):
+		start = request.GET.get('s')
+		end = request.GET.get('e')
 		
-		return qs.exclude(end_date__lt=start_datetime, end_time__lt=start_datetime).exclude(start_date__gt=end_datetime, start_time__gt=end_datetime, start_time__isnull=False).exclude(start_time__isnull=True, start_date__gt=end_datetime)
+		if start is not None:
+			try:
+				start = datetime.datetime.strptime(start, self.DATE_FORMAT)
+			except ValueError:
+				start = None
+		
+		if end is not None:
+			try:
+				end = datetime.datetime.strptime(end, self.DATE_FORMAT)
+			except ValueError:
+				end = None
+		
+		if start is None:
+			start = datetime.datetime.now()
+		
+		if end is None or end <= start:
+			duration = request.GET.get('d')
+			duration = self.DURATION_GET_PARAMS.get(duration, self.default_duration)
+			duration = datetime.timedelta(duration)
+			
+			end = start + duration
+		
+		return start, end
+	
+	def get_timespan_queryset(self, request):
+		qs = self.get_event_queryset()
+		start, end = self.get_request_timespan(request)
+		return qs.timespan(start=start, end=end)
 	
 	def get_tag_queryset(self):
 		return Tag.objects.filter(events__calendars=self.calendar).distinct()
@@ -286,16 +331,7 @@ class CalendarView(FeedView):
 	
 	# Event QuerySet parsers for a request/args/kwargs
 	def get_all_events(self, request, extra_context=None):
-		return self.get_event_queryset(), extra_context
-	
-	def get_events_by_timespan(self, request, year, month=None, day=None, extra_context=None):
-		context = extra_context or {}
-		context.update({
-			'year': year,
-			'month': month,
-			'day': day
-		})
-		return self.get_timespan_queryset(year, month, day), context
+		return self.get_timespan_queryset(request), extra_context
 	
 	def get_events_by_owner(self, request, username, extra_context=None):
 		try:
@@ -303,7 +339,7 @@ class CalendarView(FeedView):
 		except User.DoesNotExist:
 			raise Http404
 		
-		qs = self.get_event_queryset().filter(owner=owner)
+		qs = self.get_timespan_queryset(request).filter(owner=owner)
 		context = extra_context or {}
 		context.update({
 			'owner': owner
@@ -317,15 +353,7 @@ class CalendarView(FeedView):
 		if not tags:
 			raise Http404
 		
-		# Raise a 404 on an incorrect slug.
-		found_slugs = [tag.slug for tag in tags]
-		for slug in tag_slugs:
-			if slug and slug not in found_slugs:
-				raise Http404
-
-		events = self.get_event_queryset()
-		for tag in tags:
-			events = events.filter(tags=tag)
+		events = self.get_timespan_queryset(request).filter(tags__in=tags).distinct()
 		
 		context = extra_context or {}
 		context.update({'tags': tags})
@@ -339,7 +367,7 @@ class CalendarView(FeedView):
 		except ObjectDoesNotExist:
 			raise Http404
 		
-		events = self.get_event_queryset().filter(location_content_type=ct, location_pk=location.pk)
+		events = self.get_timespan_queryset(request).filter(location_content_type=ct, location_pk=location.pk)
 		
 		context = extra_context or {}
 		context.update({
