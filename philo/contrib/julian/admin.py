@@ -50,16 +50,13 @@ class CalendarAdmin(EntityAdmin):
 class CalendarViewAdmin(EntityAdmin):
 	fieldsets = (
 		(None, {
-			'fields': ('calendar',)
-		}),
-		('Pages', {
-			'fields': ('index_page', 'event_detail_page')
+			'fields': ('calendar', 'index_page', 'event_detail_page')
 		}),
 		('General Settings', {
-			'fields': ('tag_permalink_base', 'owner_permalink_base', 'location_permalink_base', 'events_per_page')
+			'fields': ('tag_permalink_base', 'owner_permalink_base', 'location_permalink_base', 'events_per_page', 'default_duration')
 		}),
-		('Event List Pages', {
-			'fields': ('timespan_page', 'tag_page', 'location_page', 'owner_page'),
+		('List Pages', {
+			'fields': ('tag_page', 'location_page', 'owner_page'),
 			'classes': COLLAPSE_CLASSES
 		}),
 		('Archive Pages', {
@@ -71,7 +68,8 @@ class CalendarViewAdmin(EntityAdmin):
 			'classes': COLLAPSE_CLASSES
 		})
 	)
-	raw_id_fields = ('index_page', 'event_detail_page', 'timespan_page', 'tag_page', 'location_page', 'owner_page', 'location_archive_page', 'tag_archive_page', 'owner_archive_page', 'item_title_template', 'item_description_template',)
+	raw_id_fields = ('index_page', 'event_detail_page', 'tag_page', 'location_page', 'owner_page', 'location_archive_page', 'tag_archive_page', 'owner_archive_page', 'item_title_template', 'item_description_template',)
+	radio_fields = {"default_duration": admin.VERTICAL}
 	related_lookup_fields = {'fk': raw_id_fields}
 
 
