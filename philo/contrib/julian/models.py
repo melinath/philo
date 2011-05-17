@@ -95,30 +95,69 @@ class TimedModel(models.Model):
 class EventManager(models.Manager):
 	def get_query_set(self):
 		return EventQuerySet(self.model)
+	
+	def timespan(self, *args, **kwargs):
+		return self.get_query_set().timespan(*args, **kwargs)
+	
+	def upcoming(self, *args, **kwargs):
+		return self.get_query_set().upcoming(*args, **kwargs)
+	
+	def current(self, *args, **kwargs):
+		return self.get_query_set().current(*args, **kwargs)
+	
+	def single_day(self, *args, **kwargs):
+		return self.get_query_set().single_day(*args, **kwargs)
+	
+	def multiday(self, *args, **kwargs):
+		return self.get_query_set().multiday(*args, **kwargs)
 
 class EventQuerySet(QuerySet):
+	def _cmp_filter(self, dt, var, direction):
+		"""Returns a :class:`Q` object which will filter out everything which does not happen before/after ``dt``. Starting or ending is determined by the boolean ``start``."""
+		if var not in ('start', 'end'):
+			raise ValueError
+		if direction not in ('before', 'after'):
+			raise ValueError
+		
+		direction = direction == 'before' and 'gt' or 'lt'
+		
+		kwargs = {
+			'%s_date__%s' % (var, direction): dt,
+		}
+		q_filter = ~Q(**kwargs)
+		kwargs = {
+			'%s_date' % var: dt,
+			'%s_time__%s' % (var, direction): dt,
+			'%s_time__isnull' % var: False
+		}
+		q_filter &= ~Q(**kwargs)
+		return q_filter
+	
 	def timespan(self, start=None, end=None):
 		"""Returns a :class:`QuerySet` of all objects which start before the end or end after the start. The filter will take care of matching ``NULL`` start/end times."""
 		q_filter = Q()
 		
 		if end is not None:
-			q_filter &= ~Q(start_date__gt=end, start_time__gt=end, start_time__isnull=False)
-			q_filter &= ~Q(start_date__gt=end, start_time__isnull=True)
+			q_filter &= self._cmp_filter(end, 'start', 'before')
 		
 		if start is not None:
-			q_filter &= ~Q(end_date__lt=start, end_time__lt=start, end_time__isnull=False)
-			q_filter &= ~Q(end_date__lt=start, end_time__isnull=True)
+			q_filter &= self._cmp_filter(start, 'end', 'after')
 		
 		return self.filter(q_filter)
 	
-	def upcoming(self):
-		return self.timespan(start=datetime.datetime.now())
+	def upcoming(self, now=None):
+		"""Returns all objects which start after ``now``."""
+		if now is None:
+			now = datetime.datetime.now()
+		q_filter = self._cmp_filter(now, 'start', 'after')
+		return self.filter(q_filter)
 	
-	def current(self):
-		now = datetime.datetime.now()
-		qs = self.exclude(start_date__gt=now).exclude(start_date=now, start_time__gt=now)
-		qs = qs.exclude(end_date__lt=now).exclude(end_date=now, end_time__lt=now)
-		return qs
+	def current(self, now=None):
+		if now is None:
+			now = datetime.datetime.now()
+		q_filter = self._cmp_filter(now, 'start', 'before')
+		q_filter &= self._cmp_filter(now, 'end', 'after')
+		return self.filter(q_filter)
 	
 	def single_day(self):
 		return self.filter(start_date=models.F('end_date'))
