@@ -28,7 +28,7 @@ __all__ = ('register_location_model', 'unregister_location_model', 'Location', '
 ICALENDAR = ICalendarFeed.mime_type
 FEEDS[ICALENDAR] = ICalendarFeed
 try:
-	DEFAULT_SITE = Site.objects.get_current()
+	DEFAULT_SITE = Site.objects.get_current().pk
 except:
 	DEFAULT_SITE = None
 _languages = dict(settings.LANGUAGES)
@@ -102,12 +102,12 @@ class EventQuerySet(QuerySet):
 		q_filter = Q()
 		
 		if end is not None:
-			q_filter |= ~Q(start_date__gt=end, start_time__gt=end, start_time__isnull=False)
-			q_filter |= ~Q(start_date__gt=end, start_time__isnull=True)
+			q_filter &= ~Q(start_date__gt=end, start_time__gt=end, start_time__isnull=False)
+			q_filter &= ~Q(start_date__gt=end, start_time__isnull=True)
 		
 		if start is not None:
-			q_filter |= ~Q(end_date__lt=start, end_time__lt=start)#, end_time__isnull=False)
-			#q_filter |= ~Q(end_date__lt=start, end_time__isnull=True)
+			q_filter &= ~Q(end_date__lt=start, end_time__lt=start, end_time__isnull=False)
+			q_filter &= ~Q(end_date__lt=start, end_time__isnull=True)
 		
 		return self.filter(q_filter)
 	
@@ -239,7 +239,7 @@ class CalendarView(FeedView):
 		# Perhaps timespans should be done with GET parameters? Or two /-separated
 		# date slugs? (e.g. 2010-02-1/2010-02-2) or a start and duration?
 		# (e.g. 2010-02-01/week/ or ?d=2010-02-01&l=week)
-		urlpatterns = self.feed_patterns(r'^', 'get_all_events', 'index_page', 'index')
+		urlpatterns = self.feed_patterns(r'^', 'get_request_timespan', 'index_page', 'index')
 		urlpatterns += self.feed_patterns(r'^%s/(?P<username>[^/]+)' % self.owner_permalink_base, 'get_events_by_owner', 'owner_page', 'events_by_user')
 		urlpatterns += self.feed_patterns(r'^%s/(?P<app_label>\w+)/(?P<model>\w+)/(?P<pk>[^/]+)' % self.location_permalink_base, 'get_events_by_location', 'location_page', 'events_by_location')
 		# Some sort of shortcut for a location would be useful so we wouldn't have to reference it by app_label/model/pk.
@@ -268,43 +268,12 @@ class CalendarView(FeedView):
 			)
 		return urlpatterns
 	
+	def get_context(self):
+		return {'calendar': self.calendar}
 	
 	# Basic QuerySet fetchers.
 	def get_event_queryset(self):
 		return self.calendar.events.all()
-	
-	def get_request_timespan(self, request):
-		start = request.GET.get('s')
-		end = request.GET.get('e')
-		
-		if start is not None:
-			try:
-				start = datetime.datetime.strptime(start, self.DATE_FORMAT)
-			except ValueError:
-				start = None
-		
-		if end is not None:
-			try:
-				end = datetime.datetime.strptime(end, self.DATE_FORMAT)
-			except ValueError:
-				end = None
-		
-		if start is None:
-			start = datetime.datetime.now()
-		
-		if end is None or end <= start:
-			duration = request.GET.get('d')
-			duration = self.DURATION_GET_PARAMS.get(duration, self.default_duration)
-			duration = datetime.timedelta(duration)
-			
-			end = start + duration
-		
-		return start, end
-	
-	def get_timespan_queryset(self, request):
-		qs = self.get_event_queryset()
-		start, end = self.get_request_timespan(request)
-		return qs.timespan(start=start, end=end)
 	
 	def get_tag_queryset(self):
 		return Tag.objects.filter(events__calendars=self.calendar).distinct()
@@ -330,8 +299,40 @@ class CalendarView(FeedView):
 		return User.objects.filter(owned_events__calendars=self.calendar).distinct()
 	
 	# Event QuerySet parsers for a request/args/kwargs
-	def get_all_events(self, request, extra_context=None):
-		return self.get_timespan_queryset(request), extra_context
+	def get_request_timespan(self, request, extra_context=None):
+		start = request.GET.get('s')
+		end = request.GET.get('e')
+		
+		if start is not None:
+			try:
+				start = datetime.datetime.strptime(start, self.DATE_FORMAT)
+			except ValueError:
+				start = None
+		
+		if end is not None:
+			try:
+				end = datetime.datetime.strptime(end, self.DATE_FORMAT)
+			except ValueError:
+				end = None
+		
+		if start is None:
+			start = datetime.datetime.now()
+		
+		if end is None or end <= start:
+			duration = request.GET.get('d')
+			duration = self.DURATION_GET_PARAMS.get(duration, self.default_duration)
+			duration = datetime.timedelta(duration)
+			
+			end = start + duration
+		
+		qs = self.get_event_queryset().timespan(start=start, end=end)
+		
+		context = extra_context or {}
+		context.update({
+			'start': start,
+			'end': end
+		})
+		return qs, context
 	
 	def get_events_by_owner(self, request, username, extra_context=None):
 		try:
@@ -339,8 +340,8 @@ class CalendarView(FeedView):
 		except User.DoesNotExist:
 			raise Http404
 		
-		qs = self.get_timespan_queryset(request).filter(owner=owner)
-		context = extra_context or {}
+		qs, context = self.get_request_timespan(request, extra_context)
+		qs = qs.filter(owner=owner)
 		context.update({
 			'owner': owner
 		})
@@ -353,12 +354,12 @@ class CalendarView(FeedView):
 		if not tags:
 			raise Http404
 		
-		events = self.get_timespan_queryset(request).filter(tags__in=tags).distinct()
+		qs, context = self.get_request_timespan(request, extra_context)
+		qs = qs.filter(tags__in=tags).distinct()
 		
-		context = extra_context or {}
 		context.update({'tags': tags})
 		
-		return events, context
+		return qs, context
 	
 	def get_events_by_location(self, request, app_label, model, pk, extra_context=None):
 		try:
@@ -367,13 +368,13 @@ class CalendarView(FeedView):
 		except ObjectDoesNotExist:
 			raise Http404
 		
-		events = self.get_timespan_queryset(request).filter(location_content_type=ct, location_pk=location.pk)
+		qs, context = self.get_request_timespan(request, extra_context)
+		qs = qs.filter(location_content_type=ct, location_pk=location.pk)
 		
-		context = extra_context or {}
 		context.update({
 			'location': location
 		})
-		return events, context
+		return qs, context
 	
 	# Detail View.
 	def event_detail_view(self, request, year, month, day, slug, extra_context=None):

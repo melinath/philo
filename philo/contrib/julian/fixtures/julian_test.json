@@ -1,0 +1,85 @@
+[
+    {
+        "pk": 1, 
+        "model": "julian.calendar", 
+        "fields": {
+            "description": "Test description.", 
+            "language": "en", 
+            "site": 1, 
+            "slug": "test-calendar", 
+            "events": [], 
+            "name": "Test Calendar"
+        }
+    }, 
+    {
+        "pk": 1, 
+        "model": "julian.calendarview", 
+        "fields": {
+            "feed_length": 15, 
+            "tag_page": null, 
+            "feed_suffix": "feed", 
+            "location_archive_page": null, 
+            "event_detail_page": 1, 
+            "tag_permalink_base": "tags", 
+            "events_per_page": null, 
+            "owner_page": null, 
+            "location_page": null, 
+            "owner_archive_page": null, 
+            "tag_archive_page": null, 
+            "item_title_template": null, 
+            "owner_permalink_base": "owners", 
+            "feed_type": "text/calendar", 
+            "location_permalink_base": "locations", 
+            "index_page": 1, 
+            "item_description_template": null, 
+            "calendar": 1, 
+            "feeds_enabled": true, 
+            "default_duration": 7
+        }
+    }, 
+    {
+        "pk": 1, 
+        "model": "auth.user", 
+        "fields": {
+            "username": "test", 
+            "first_name": "", 
+            "last_name": "", 
+            "is_active": true, 
+            "is_superuser": true, 
+            "is_staff": true, 
+            "last_login": "2011-05-17 10:16:04", 
+            "groups": [], 
+            "user_permissions": [], 
+            "password": "sha1$56506$343bc667c32ff0994d8034aed4bc872c68d351fb", 
+            "email": "tes@tet.te", 
+            "date_joined": "2011-05-17 10:14:22"
+        }
+    }, 
+    {
+        "pk": 2, 
+        "model": "auth.user", 
+        "fields": {
+            "username": "test2", 
+            "first_name": "", 
+            "last_name": "", 
+            "is_active": true, 
+            "is_superuser": false, 
+            "is_staff": false, 
+            "last_login": "2011-05-17 15:48:25", 
+            "groups": [], 
+            "user_permissions": [], 
+            "password": "sha1$6256b$ea6996243c45ea0697fca0699d1900e1fedece08", 
+            "email": "", 
+            "date_joined": "2011-05-17 15:48:25"
+        }
+    }, 
+    {
+        "pk": 1, 
+        "model": "sites.site", 
+        "fields": {
+            "domain": "example.com", 
+            "name": "example.com", 
+            "root_node": 1
+        }
+    }
+]
