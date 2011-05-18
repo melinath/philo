@@ -229,7 +229,7 @@ class CalendarView(FeedView):
 		(WEEK, 'Week'),
 		(MONTH, 'Month')
 	)
-	DURATION_GET_PARAMS = {
+	TIMESPAN_GET_PARAMS = {
 		'day': DAY,
 		'week': WEEK,
 		'month': MONTH
@@ -251,7 +251,7 @@ class CalendarView(FeedView):
 	owner_permalink_base = models.CharField(max_length=30, default='owners')
 	location_permalink_base = models.CharField(max_length=30, default='locations')
 	
-	default_duration = models.PositiveIntegerField(max_length=5, choices=TIMESPAN_CHOICES, default=WEEK)
+	default_timespan = models.PositiveIntegerField(max_length=5, choices=TIMESPAN_CHOICES, default=WEEK)
 	events_per_page = models.PositiveIntegerField(blank=True, null=True)
 	
 	item_context_var = "events"
@@ -275,9 +275,6 @@ class CalendarView(FeedView):
 	
 	@property
 	def urlpatterns(self):
-		# Perhaps timespans should be done with GET parameters? Or two /-separated
-		# date slugs? (e.g. 2010-02-1/2010-02-2) or a start and duration?
-		# (e.g. 2010-02-01/week/ or ?d=2010-02-01&l=week)
 		urlpatterns = self.feed_patterns(r'^', 'get_request_timespan', 'index_page', 'index')
 		urlpatterns += self.feed_patterns(r'^%s/(?P<username>[^/]+)' % self.owner_permalink_base, 'get_events_by_owner', 'owner_page', 'events_by_user')
 		urlpatterns += self.feed_patterns(r'^%s/(?P<app_label>\w+)/(?P<model>\w+)/(?P<pk>[^/]+)' % self.location_permalink_base, 'get_events_by_location', 'location_page', 'events_by_location')
@@ -358,11 +355,11 @@ class CalendarView(FeedView):
 			start = datetime.datetime.now()
 		
 		if end is None or end <= start:
-			duration = request.GET.get('d')
-			duration = self.DURATION_GET_PARAMS.get(duration, self.default_duration)
-			duration = datetime.timedelta(duration)
+			timespan = request.GET.get('t')
+			timespan = self.TIMESPAN_GET_PARAMS.get(timespan, self.default_timespan)
+			timespan = datetime.timedelta(timespan)
 			
-			end = start + duration
+			end = start + timespan
 		
 		qs = self.get_event_queryset().timespan(start=start, end=end)
 		

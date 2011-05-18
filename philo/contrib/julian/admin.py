@@ -53,7 +53,7 @@ class CalendarViewAdmin(EntityAdmin):
 			'fields': ('calendar', 'index_page', 'event_detail_page')
 		}),
 		('General Settings', {
-			'fields': ('tag_permalink_base', 'owner_permalink_base', 'location_permalink_base', 'events_per_page', 'default_duration')
+			'fields': ('tag_permalink_base', 'owner_permalink_base', 'location_permalink_base', 'events_per_page', 'default_timespan')
 		}),
 		('List Pages', {
 			'fields': ('tag_page', 'location_page', 'owner_page'),
@@ -69,7 +69,7 @@ class CalendarViewAdmin(EntityAdmin):
 		})
 	)
 	raw_id_fields = ('index_page', 'event_detail_page', 'tag_page', 'location_page', 'owner_page', 'location_archive_page', 'tag_archive_page', 'owner_archive_page', 'item_title_template', 'item_description_template',)
-	radio_fields = {"default_duration": admin.VERTICAL}
+	radio_fields = {"default_timespan": admin.VERTICAL}
 	related_lookup_fields = {'fk': raw_id_fields}
 
 

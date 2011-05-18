@@ -34,7 +34,7 @@
             "item_description_template": null, 
             "calendar": 1, 
             "feeds_enabled": true, 
-            "default_duration": 7
+            "default_timespan": 7
         }
     }, 
     {
