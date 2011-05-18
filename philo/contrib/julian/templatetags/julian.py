@@ -4,6 +4,7 @@ from django import template
 
 register = template.Library()
 
+ONE_DAY = timedelta(days=1)
 
 class BaseDateRangeNode(template.Node):
 	DATE_FORMAT = '%04d-%02d-%02d'
@@ -56,8 +57,8 @@ class NextDateRangeNode(ImpliedDateRangeNode):
 	def render(self, context):
 		start_date = context['start']
 		end_date = context['end']
-		range_delta = end_date - start_date
-		future_start = end_date
+		range_delta = end_date - start_date + ONE_DAY
+		future_start = end_date + ONE_DAY
 		future_end = end_date + range_delta
 		url = self._get_url(context, future_start, future_end)
 		return self._render_or_ctx(context, url)
@@ -68,8 +69,8 @@ class PrevDateRangeNode(ImpliedDateRangeNode):
 		start_date = context['start']
 		end_date = context['end']
 		range_delta = end_date - start_date
-		past_start = start_date - range_delta
-		past_end = start_date
+		past_start = start_date - range_delta - ONE_DAY
+		past_end = start_date - ONE_DAY
 		url = self._get_url(context, past_start, past_end)
 		return self._render_or_ctx(context, url)
 
