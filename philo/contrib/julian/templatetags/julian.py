@@ -21,8 +21,7 @@ class BaseDateRangeNode(template.Node):
 	def _get_url(self, context, start_date, end_date):
 		start_string = self._date_string(start_date)
 		end_string = self._date_string(end_date)
-		absolute_url = context['node'].get_absolute_url()
-		return u'%s?s=%s&e=%s' % (absolute_url, start_string, end_string,)
+		return u'?s=%s&e=%s' % (start_string, end_string,)
 		
 	def _render_or_ctx(self, context, value):
 		if self.as_var is not None:
