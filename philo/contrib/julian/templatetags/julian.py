@@ -3,7 +3,6 @@ from django import template
 
 
 register = template.Library()
-
 ONE_DAY = timedelta(days=1)
 
 class BaseDateRangeNode(template.Node):
@@ -148,3 +147,13 @@ def add_days(value, arg):
 	except:
 		return ''
 	return value + timedelta(days=num)
+
+
+@register.filter(name='add_minutes')
+def add_minutes(value, arg):
+	"""Takes a date or datetime object and adds arg days to it."""
+	try:
+		num = int(arg)
+	except:
+		return ''
+	return value + timedelta(minutes=num)
