@@ -90,6 +90,7 @@ class TimedModel(models.Model):
 	
 	class Meta:
 		abstract = True
+		ordering = ('start_date', 'start_time', 'end_date', 'end_time')
 
 
 class EventManager(models.Manager):
