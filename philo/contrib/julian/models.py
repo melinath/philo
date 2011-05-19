@@ -15,7 +15,7 @@ from django.http import HttpResponse, Http404
 from django.utils.encoding import force_unicode
 
 from philo.contrib.julian.feedgenerator import ICalendarFeed
-from philo.contrib.julian.utils import DateRange
+from philo.contrib.julian.utils import DateRange, START_GET_KEY, END_GET_KEY
 from philo.contrib.penfield.models import FeedView, FEEDS
 from philo.exceptions import ViewCanNotProvideSubpath
 from philo.models import Tag, Entity, Page
@@ -338,8 +338,8 @@ class CalendarView(FeedView):
 	
 	# Event QuerySet parsers for a request/args/kwargs
 	def get_request_timespan(self, request, extra_context=None):
-		start = request.GET.get('s')
-		end = request.GET.get('e')
+		start = request.GET.get(START_GET_KEY)
+		end = request.GET.get(END_GET_KEY)
 		
 		if start is not None:
 			try:

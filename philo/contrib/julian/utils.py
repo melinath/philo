@@ -2,11 +2,14 @@ from datetime import date, datetime, timedelta
 
 ONE_DAY = timedelta(days=1)
 
+START_GET_KEY = 's'
+END_GET_KEY = 'e'
+QUERYSTRING_FORMAT = '%s=%%s&%s=%%s' % (START_GET_KEY, END_GET_KEY)
+DATE_FORMAT = '%04d-%02d-%02d'
+
 class DateRange(object):
 	"""Represents a Julian date range."""
 	
-	DATE_FORMAT = '%04d-%02d-%02d'
-	QUERYSTRING_FORMAT = 's=%s&e=%s'
 	URL_FORMAT = '?%s'
 
 	def __init__(self, start, end):
@@ -21,9 +24,9 @@ class DateRange(object):
 		return self.url()
 		
 	def url(self):
-		start_string = self.DATE_FORMAT % (self.start.year, self.start.month, self.start.day)
-		end_string = self.DATE_FORMAT % (self.end.year, self.end.month, self.end.day)
-		querystring = self.QUERYSTRING_FORMAT % (start_string, end_string)
+		start_string = DATE_FORMAT % (self.start.year, self.start.month, self.start.day)
+		end_string = DATE_FORMAT % (self.end.year, self.end.month, self.end.day)
+		querystring = QUERYSTRING_FORMAT % (start_string, end_string)
 		return self.URL_FORMAT % (querystring,)
 		
 	def next_range(self):
