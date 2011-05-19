@@ -15,6 +15,7 @@ from django.http import HttpResponse, Http404
 from django.utils.encoding import force_unicode
 
 from philo.contrib.julian.feedgenerator import ICalendarFeed
+from philo.contrib.julian.utils import DateRange
 from philo.contrib.penfield.models import FeedView, FEEDS
 from philo.exceptions import ViewCanNotProvideSubpath
 from philo.models import Tag, Entity, Page
@@ -366,8 +367,7 @@ class CalendarView(FeedView):
 		
 		context = extra_context or {}
 		context.update({
-			'start': start,
-			'end': end
+			'range': DateRange(start, end)
 		})
 		return qs, context
 	

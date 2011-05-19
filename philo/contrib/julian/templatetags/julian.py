@@ -1,5 +1,8 @@
 from datetime import date, datetime, timedelta
+
 from django import template
+
+from philo.contrib.julian.utils import DateRange
 
 
 register = template.Library()
@@ -18,10 +21,8 @@ class BaseDateRangeNode(template.Node):
 		string = self.DATE_FORMAT % (date_.year, date_.month, date_.day,)
 		return string
 		
-	def _get_url(self, context, start_date, end_date):
-		start_string = self._date_string(start_date)
-		end_string = self._date_string(end_date)
-		return u'?s=%s&e=%s' % (start_string, end_string,)
+	def _get_range_object(self, context, start_date, end_date):
+		return DateRange(start_date, end_date)
 		
 	def _render_or_ctx(self, context, value):
 		if self.as_var is not None:
@@ -40,7 +41,7 @@ class DateRangeNode(BaseDateRangeNode):
 	def render(self, context):
 		start_date = self.start_date.resolve(context)
 		end_date = self.end_date.resolve(context)
-		url = self._get_url(context, start_date, end_date)
+		url = self._get_range_object(context, start_date, end_date)
 		return self._render_or_ctx(context, url)
 
 
@@ -48,33 +49,11 @@ class ConstantDateRangeNode(BaseDateRangeNode):
 	def render(self, context):
 		start_date = self.start_date
 		end_date = self.end_date
-		url = self._get_url(context, start_date, end_date)
+		url = self._get_range_object(context, start_date, end_date)
 		return self._render_or_ctx(context, url)
 
 
-class NextDateRangeNode(ImpliedDateRangeNode):
-	def render(self, context):
-		start_date = context['start']
-		end_date = context['end']
-		range_delta = end_date - start_date + ONE_DAY
-		future_start = end_date + ONE_DAY
-		future_end = end_date + range_delta
-		url = self._get_url(context, future_start, future_end)
-		return self._render_or_ctx(context, url)
-
-
-class PrevDateRangeNode(ImpliedDateRangeNode):
-	def render(self, context):
-		start_date = context['start']
-		end_date = context['end']
-		range_delta = end_date - start_date
-		past_start = start_date - range_delta - ONE_DAY
-		past_end = start_date - ONE_DAY
-		url = self._get_url(context, past_start, past_end)
-		return self._render_or_ctx(context, url)
-
-
-@register.tag(name='range_url')
+@register.tag(name='date_range')
 def get_date_range_url(parser, token):
 	"""
 	{% range_url start_date end_date [as <var>] %}
@@ -99,44 +78,6 @@ def get_date_range_url(parser, token):
 		end_date = parser.compile_filter(end_date)
 	
 	return DateRangeNode(start_date, end_date, as_var)
-
-
-@register.tag(name='next_range_url')
-def get_next_date_range_url(parser, token):
-	"""
-	{% next_range_url [as <var>] %}
-	
-	Only works on pages with ``start`` and ``end`` in the context (i.e., date range views).
-	"""
-	
-	params = token.split_contents()
-	tag = params[0]
-	as_var = None
-	
-	if len(params) >= 3 and params[-2] == 'as':
-		as_var = params[-1]
-		params = params[:-2]
-		
-	return NextDateRangeNode(as_var)
-
-
-@register.tag(name='prev_range_url')
-def get_prev_date_range_url(parser, token):
-	"""
-	{% prev_range_url [as <var>] %}
-	
-	Only works on pages with ``start`` and ``end`` in the context (i.e., date range views).
-	"""
-	
-	params = token.split_contents()
-	tag = params[0]
-	as_var = None
-	
-	if len(params) >= 3 and params[-2] == 'as':
-		as_var = params[-1]
-		params = params[:-2]
-		
-	return PrevDateRangeNode(as_var)
 
 
 @register.filter(name='add_days')
