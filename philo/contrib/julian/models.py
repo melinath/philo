@@ -196,7 +196,7 @@ class Event(Entity, TimedModel):
 	def __unicode__(self):
 		return self.name
 	
-	class Meta:
+	class Meta(TimedModel.Meta):
 		unique_together = ('site', 'created')
 
 
