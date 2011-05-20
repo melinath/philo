@@ -36,13 +36,13 @@ class DateRange(object):
 		return self.URL_FORMAT % (querystring,)
 		
 	def next_range(self):
-		range_delta = self.end - self.start + ONE_DAY
+		range_delta = self.end - self.start
 		future_start = self.end
-		future_end = self.end + range_delta
+		future_end = future_start + range_delta
 		return DateRange(future_start, future_end)
 		
 	def prev_range(self):
 		range_delta = self.end - self.start
-		past_start = self.start - range_delta - ONE_DAY
-		past_end = self.start - ONE_DAY
+		past_start = self.start - range_delta
+		past_end = self.start
 		return DateRange(past_start, past_end)
