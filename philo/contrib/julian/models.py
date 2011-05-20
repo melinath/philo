@@ -77,8 +77,8 @@ class TimedModel(models.Model):
 		return self.start_time is None and self.end_time is None
 	
 	def clean(self):
-		if bool(self.start_time) != bool(self.end_time):
-			raise ValidationError("A %s must have either a start time and an end time or neither.")
+		if (self.start_time is None) != (self.end_time is None):
+			raise ValidationError("A %s must have either a start time and an end time or neither." % self.__class__.__name__)
 		
 		if self.start_date > self.end_date or self.start_date == self.end_date and self.start_time > self.end_time:
 			raise ValidationError("A %s cannot end before it starts." % self.__class__.__name__)
