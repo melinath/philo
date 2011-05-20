@@ -7,6 +7,9 @@ END_GET_KEY = 'e'
 QUERYSTRING_FORMAT = '%s=%%s&%s=%%s' % (START_GET_KEY, END_GET_KEY)
 DATE_FORMAT = '%04d-%02d-%02d'
 
+class RangeError(Exception):
+	pass
+
 class DateRange(object):
 	"""Represents a Julian date range."""
 	
@@ -14,10 +17,13 @@ class DateRange(object):
 
 	def __init__(self, start, end):
 		if (isinstance(start, datetime) or isinstance(start, date)) and (isinstance(end, datetime) or isinstance(end, date)):
-			self.start = start
-			self.end = end
+			if start >= end:
+				raise RangeError('End date must occur after start date.')
+			else:
+				self.start = start
+				self.end = end
 		else:
-			raise TypeError('start and end must be date or datetime objects')
+			raise TypeError('Start and end dates must be date or datetime objects.')
 	
 	# Is this right? Maybe it should return a text rendering of the range rather than the URL?
 	def __unicode__(self):
