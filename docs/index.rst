@@ -3,6 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+.. module:: philo
+
 Welcome to Philo's documentation!
 =================================
 
@@ -21,6 +23,7 @@ Contents:
 	templatetags
 	forms
 	loaders
+	contrib/intro
 
 Indices and tables
 ==================
