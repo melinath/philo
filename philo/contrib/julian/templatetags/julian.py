@@ -1,12 +1,18 @@
 from datetime import date, datetime, timedelta
+from math import floor
 
 from django import template
+from django.contrib.humanize.templatetags.humanize import apnumber
 
 from philo.contrib.julian.utils import DateRange
 
 
 register = template.Library()
+
+
 ONE_DAY = timedelta(days=1)
+MONTH_LENGTH = 30.436875 # http://en.wikipedia.org/wiki/Month#Julian_and_Gregorian_calendars
+
 
 class BaseDateRangeNode(template.Node):
 	DATE_FORMAT = '%04d-%02d-%02d'
@@ -98,3 +104,46 @@ def add_minutes(value, arg):
 	except:
 		return ''
 	return value + timedelta(minutes=num)
+	
+@register.filter(name='naturaldelta')
+def naturaldelta(value, arg=2):
+	"""
+	Takes a timedelta and returns it as a string of counts and units, rounding off insignificant units.
+	Argument is the number of units of specificity.
+	"""
+	try:
+		days = value.days
+		seconds = value.seconds
+		microseconds = value.microseconds
+	except:
+		return ''
+	
+	units = {}
+	unit_count = int(arg)
+	
+	# day portion parsing
+	units['years'] = floor(days / 365)
+	rdays = days % 365
+	units['months'] = floor(rdays / MONTH_LENGTH)
+	rdays = rdays % MONTH_LENGTH
+	units['weeks'] = floor(rdays / 7)
+	units['days'] = round(rdays % 7)
+	
+	# second portion parsing
+	units['hours'] = floor(seconds / 3600)
+	rsecs = seconds % 3600
+	units['minutes'] = floor(rsecs / 60)
+	units['seconds'] = round(rsecs % 60)
+	
+	# microsecond parsing
+	milleseconds = floor(microseconds / 1000)
+	microseconds = round(microseconds % 1000)
+	
+	bits = []
+	
+	for unit, count in units.items():
+		if count > 0:
+			unit_name = unit if count > 1 else unit[:-1] # depluralize if necessary
+			bits.append('%s %s' % (apnumber(count), unit_name))
+		
+	return " ".join(bits[:unit_count])

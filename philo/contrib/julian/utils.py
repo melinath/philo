@@ -28,6 +28,9 @@ class DateRange(object):
 	# Is this right? Maybe it should return a text rendering of the range rather than the URL?
 	def __unicode__(self):
 		return self.url()
+	
+	def delta(self):
+		return self.end - self.start
 		
 	def url(self):
 		start_string = DATE_FORMAT % (self.start.year, self.start.month, self.start.day)
