@@ -24,6 +24,13 @@ os.environ['DJANGO_SETTINGS_MODULE'] = 'dummy-settings'
 # Import loader so that loader_tags will be correctly added to builtins. Weird import situations... this is necessary for doc build to work.
 from django.template import loader
 
+# HACK to override descriptors that would cause AttributeErrors to be raised otherwise (which would keep them from being documented.)
+from philo.contrib.sobol.models import SearchView
+SearchView.searches = 5
+from philo.models.nodes import TargetURLModel, File
+TargetURLModel.reversing_parameters = 5
+File.file = 5
+
 # -- General configuration -----------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
@@ -31,7 +38,7 @@ needs_sphinx = '1.0'
 
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
-extensions = ['djangodocs', 'sphinx.ext.autodoc']
+extensions = ['djangodocs', 'sphinx.ext.autodoc', 'philodocs']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -233,3 +240,4 @@ def skip_attribute_attrs(app, what, name, obj, skip, options):
 
 def setup(app):
 	app.connect('autodoc-skip-member', skip_attribute_attrs)
+	#app.connect('autodoc-process-signature', )
