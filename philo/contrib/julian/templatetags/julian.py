@@ -1,10 +1,11 @@
 from datetime import date, datetime, timedelta
+from itertools import groupby
 from math import floor
 
 from django import template
 from django.contrib.humanize.templatetags.humanize import apnumber
 
-from philo.contrib.julian.utils import DateRange
+from philo.contrib.julian.utils import DateRange, DAY_START
 
 
 register = template.Library()
@@ -58,8 +59,8 @@ class ConstantDateRangeNode(BaseDateRangeNode):
 		return self._render_or_ctx(context, url)
 
 
-@register.tag(name='date_range')
-def get_date_range_url(parser, token):
+@register.tag
+def date_range(parser, token):
 	"""
 	{% range_url start_date end_date [as <var>] %}
 	{% range_url "yyyy-mm-dd" "yyyy-mm-dd" [as <var>] %}
@@ -83,6 +84,56 @@ def get_date_range_url(parser, token):
 		end_date = parser.compile_filter(end_date)
 	
 	return DateRangeNode(start_date, end_date, as_var)
+
+
+class RegroupEventsNode(template.Node):
+	def __init__(self, events, as_var):
+		self.events = events
+		self.as_var = as_var
+	
+	def key(self, event):
+		key = event.get_start() - DAY_START
+		if isinstance(key, datetime):
+			key = key.date()
+		return key
+	
+	def render(self, context):
+		events = self.events.resolve(context, True)
+		
+		if events is None:
+			context[self.as_var] = []
+			return ''
+		
+		context[self.as_var] = [
+			{
+				'grouper': key,
+				'list': list(val)
+			}
+			for key, val in groupby(events, self.key)
+		]
+		return ''
+
+
+@register.tag
+def regroup_events(parser, token):
+	"""
+	Regroups events based on the adjusted day on which they start.
+	
+	Example::
+	
+		{% regroup_events events as events %}
+	
+	"""
+	bits = token.split_contents()
+	tag = bits[0]
+	bits = bits[1:]
+	
+	if len(bits) > 3 or bits[1] != 'as':
+		raise template.TemplateSyntaxError("%s tag expects the syntax {% regroup_events <events> as <events> %}" % tag)
+	
+	events = parser.compile_filter(bits[0])
+	as_var = bits[-1]
+	return RegroupEventsNode(events, as_var)
 
 
 @register.filter(name='add_days')

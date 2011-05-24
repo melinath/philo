@@ -1,6 +1,10 @@
 from datetime import date, datetime, timedelta
 
+from django.conf import settings
 from django.http import QueryDict
+
+
+DAY_START = timedelta(hours=getattr(settings, 'JULIAN_DAY_START', 6))
 
 
 DAY = timedelta(days=1)
@@ -63,7 +67,7 @@ class DateRange(object):
 	def __init__(self, start=None, end=None, timespan=None):
 		if start is None:
 			start = datetime.now()
-		self.start = force_start(start)
+		self.start = force_start(start) + DAY_START
 		
 		if end is None or end <= start:
 			if timespan is None:
@@ -71,7 +75,7 @@ class DateRange(object):
 			timespan = timespan - timedelta(microseconds=1)
 			end = self.start + timespan
 		
-		self.end = force_end(end)
+		self.end = force_end(end) + DAY_START
 	
 	# Is this right? Maybe it should return a text rendering of the range rather than the URL?
 	def __unicode__(self):
