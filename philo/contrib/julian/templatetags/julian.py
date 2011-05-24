@@ -10,7 +10,6 @@ from philo.contrib.julian.utils import DateRange
 register = template.Library()
 
 
-ONE_DAY = timedelta(days=1)
 MONTH_LENGTH = 30.436875 # http://en.wikipedia.org/wiki/Month#Julian_and_Gregorian_calendars
 
 

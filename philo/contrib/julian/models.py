@@ -15,7 +15,7 @@ from django.http import HttpResponse, Http404
 from django.utils.encoding import force_unicode
 
 from philo.contrib.julian.feedgenerator import ICalendarFeed
-from philo.contrib.julian.utils import DateRange, START_GET_KEY, END_GET_KEY
+from philo.contrib.julian.utils import DateRange, get_request_daterange, DAY, WEEK, MONTH
 from philo.contrib.penfield.models import FeedView, FEEDS
 from philo.exceptions import ViewCanNotProvideSubpath
 from philo.models import Tag, Entity, Page
@@ -223,20 +223,11 @@ class Calendar(Entity):
 
 
 class CalendarView(FeedView):
-	DAY = 1
-	WEEK = 7
-	MONTH = 28
 	TIMESPAN_CHOICES = (
-		(DAY, 'Day'),
-		(WEEK, 'Week'),
-		(MONTH, 'Month')
+		(DAY.days, 'Day'),
+		(WEEK.days, 'Week'),
+		(MONTH.days, 'Month')
 	)
-	TIMESPAN_GET_PARAMS = {
-		'day': DAY,
-		'week': WEEK,
-		'month': MONTH
-	}
-	DATE_FORMAT = "%Y-%m-%d"
 	calendar = models.ForeignKey(Calendar)
 	event_detail_page = models.ForeignKey(Page, related_name="calendar_detail_related")
 	
@@ -253,7 +244,7 @@ class CalendarView(FeedView):
 	owner_permalink_base = models.CharField(max_length=30, default='owners')
 	location_permalink_base = models.CharField(max_length=30, default='locations')
 	
-	default_timespan = models.PositiveIntegerField(max_length=5, choices=TIMESPAN_CHOICES, default=WEEK)
+	default_timespan = models.PositiveIntegerField(max_length=5, choices=TIMESPAN_CHOICES, default=WEEK.days)
 	events_per_page = models.PositiveIntegerField(blank=True, null=True)
 	
 	item_context_var = "events"
@@ -277,7 +268,7 @@ class CalendarView(FeedView):
 	
 	@property
 	def urlpatterns(self):
-		urlpatterns = self.feed_patterns(r'^', 'get_request_timespan', 'index_page', 'index')
+		urlpatterns = self.feed_patterns(r'^', 'get_all_events', 'index_page', 'index')
 		urlpatterns += self.feed_patterns(r'^%s/(?P<username>[^/]+)' % self.owner_permalink_base, 'get_events_by_owner', 'owner_page', 'events_by_user')
 		urlpatterns += self.feed_patterns(r'^%s/(?P<app_label>\w+)/(?P<model>\w+)/(?P<pk>[^/]+)' % self.location_permalink_base, 'get_events_by_location', 'location_page', 'events_by_location')
 		# Some sort of shortcut for a location would be useful so we wouldn't have to reference it by app_label/model/pk.
@@ -337,37 +328,14 @@ class CalendarView(FeedView):
 		return User.objects.filter(owned_events__calendars=self.calendar).distinct()
 	
 	# Event QuerySet parsers for a request/args/kwargs
-	def get_request_timespan(self, request, extra_context=None):
-		start = request.GET.get(START_GET_KEY)
-		end = request.GET.get(END_GET_KEY)
+	def get_all_events(self, request, extra_context=None):
+		daterange = get_request_daterange(request, datetime.timedelta(self.default_timespan))
 		
-		if start is not None:
-			try:
-				start = datetime.datetime.strptime(start, self.DATE_FORMAT)
-			except ValueError:
-				start = None
-		
-		if end is not None:
-			try:
-				end = datetime.datetime.strptime(end, self.DATE_FORMAT)
-			except ValueError:
-				end = None
-		
-		if start is None:
-			start = datetime.datetime.now()
-		
-		if end is None or end <= start:
-			timespan = request.GET.get('t')
-			timespan = self.TIMESPAN_GET_PARAMS.get(timespan, self.default_timespan)
-			timespan = datetime.timedelta(timespan)
-			
-			end = start + timespan
-		
-		qs = self.get_event_queryset().timespan(start=start, end=end)
+		qs = self.get_event_queryset().timespan(start=daterange.start, end=daterange.end)
 		
 		context = extra_context or {}
 		context.update({
-			'range': DateRange(start, end)
+			'range': daterange
 		})
 		return qs, context
 	
@@ -377,7 +345,7 @@ class CalendarView(FeedView):
 		except User.DoesNotExist:
 			raise Http404
 		
-		qs, context = self.get_request_timespan(request, extra_context)
+		qs, context = self.get_all_events(request, extra_context)
 		qs = qs.filter(owner=owner)
 		context.update({
 			'owner': owner
@@ -391,7 +359,7 @@ class CalendarView(FeedView):
 		if not tags:
 			raise Http404
 		
-		qs, context = self.get_request_timespan(request, extra_context)
+		qs, context = self.get_all_events(request, extra_context)
 		qs = qs.filter(tags__in=tags).distinct()
 		
 		context.update({'tags': tags})
@@ -405,7 +373,7 @@ class CalendarView(FeedView):
 		except ObjectDoesNotExist:
 			raise Http404
 		
-		qs, context = self.get_request_timespan(request, extra_context)
+		qs, context = self.get_all_events(request, extra_context)
 		qs = qs.filter(location_content_type=ct, location_pk=location.pk)
 		
 		context.update({
