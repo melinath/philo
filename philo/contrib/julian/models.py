@@ -277,7 +277,7 @@ class CalendarView(FeedView):
 		elif isinstance(obj, Tag) or isinstance(obj, models.query.QuerySet) and obj.model == Tag:
 			if isinstance(obj, Tag):
 				obj = [obj]
-			return 'entries_by_tag', [], {'tag_slugs': '/'.join(obj)}
+			return 'events_by_tag', [], {'tag_slugs': '/'.join([o.slug for o in obj])}
 		raise ViewCanNotProvideSubpath
 	
 	@property
