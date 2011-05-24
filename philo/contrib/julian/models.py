@@ -214,6 +214,11 @@ class Calendar(Entity):
 		return self.name
 	
 	@property
+	def event_tags(self):
+		"""Returns a :class:`QuerySet` of :class:`.Tag`\ s that are used on any events in this calendar."""
+		return Tag.objects.filter(events__calendars=self).distinct()
+	
+	@property
 	def fpi(self):
 		# See http://xml.coverpages.org/tauber-fpi.html or ISO 9070:1991 for format information.
 		return "-//%s//%s//%s" % (self.site.name, self.name, self.language.split('-')[0].upper())
