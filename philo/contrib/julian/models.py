@@ -331,7 +331,7 @@ class CalendarView(FeedView):
 	def get_all_events(self, request, extra_context=None):
 		daterange = get_request_daterange(request, datetime.timedelta(self.default_timespan))
 		
-		qs = self.get_event_queryset().timespan(start=daterange.start, end=daterange.end)
+		qs = self.get_event_queryset().timespan(start=daterange.adjusted_start, end=daterange.adjusted_end).exclude(end_time__isnull=True, end_date=daterange.adjusted_end)
 		
 		context = extra_context or {}
 		context.update({

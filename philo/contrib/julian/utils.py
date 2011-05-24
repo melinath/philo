@@ -67,7 +67,7 @@ class DateRange(object):
 	def __init__(self, start=None, end=None, timespan=None):
 		if start is None:
 			start = datetime.now()
-		self.start = force_start(start) + DAY_START
+		self.start = force_start(start)
 		
 		if end is None or end <= start:
 			if timespan is None:
@@ -75,11 +75,19 @@ class DateRange(object):
 			timespan = timespan - timedelta(microseconds=1)
 			end = self.start + timespan
 		
-		self.end = force_end(end) + DAY_START
+		self.end = force_end(end)
 	
 	# Is this right? Maybe it should return a text rendering of the range rather than the URL?
 	def __unicode__(self):
 		return self.url()
+	
+	@property
+	def adjusted_start(self):
+		return self.start + DAY_START
+	
+	@property
+	def adjusted_end(self):
+		return self.end + DAY_START
 	
 	def delta(self):
 		return (self.end - self.start) + timedelta(microseconds=1)
