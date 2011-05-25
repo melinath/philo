@@ -1,5 +1,7 @@
-import mimetypes
-import os
+from django.core.exceptions import ValidationError
+from django.utils.translation import ugettext_lazy as _
+
+from philo.contrib.edmonia.utils import get_filename_mimetype, convert_filetype
 
 
 class FileTypeValidator(object):
@@ -8,30 +10,18 @@ class FileTypeValidator(object):
 	the built-in mimetype library. TODO: it would be great to use python-magic, if it's available.
 	"""
 	def __init__(self, allowed=None, disallowed=None):
-		self.disallowed = set([self.convert(ftype) for ftype in disallowed or []])
-		self.allowed = set([self.convert(ftype) for ftype in allowed or []]) - self.disallowed
+		self.disallowed = set([convert_filetype(ftype) for ftype in disallowed or []])
+		self.allowed = set([convert_filetype(ftype) for ftype in allowed or []]) - self.disallowed
 	
 	def __call__(self, value):
 		try:
-			mimetype = self.convert(os.path.splitext(value.name)[1])
-		except Exception, e:
+			mimetype = get_filename_mimetype(value.name)
+		except ValueError, e:
 			raise ValidationError(e.message)
+		except KeyError, e:
+			raise ValidationError(_(u'Unknown file type: %s' % e.message))
 		
 		if self.allowed and mimetype not in self.allowed:
 			raise ValidationError(_(u"Only the following mime types may be uploaded: %s" % ', '.join(self.allowed)))
 		if self.disallowed and mimetype not in self.disallowed:
 			raise ValidationError(_(u"The following mime types may not be uploaded: %s" % ', '.join(self.disallowed)))
-	
-	def convert(self, ftype):
-		if '.' in ftype:
-			try:
-				return mimetypes.types_map[ftype]
-			except KeyError:
-				return mimetypes.common_types[ftype]
-		elif '/' in ftype:
-			if ftype in mimetypes.types_map.values() or ftype in mimetypes.common_types.values():
-				return ftype
-			else:
-				raise ValueError(_(u'Unknown MIME-type: %s' % ftype))
-		else:
-			raise ValueError(_('Invalid MIME-type: %s' % ftype))

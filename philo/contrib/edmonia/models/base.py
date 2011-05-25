@@ -2,8 +2,7 @@
 from django.contrib.contenttypes import generic
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
-#from philo.models import Tag, Entity, Titled
-from philo.models import Entity, Titled
+from philo.models import Entity, register_value_model
 from philo.utils import ContentTypeSubclassLimiter
 
 
@@ -24,18 +23,22 @@ resource_source_contenttype_limiter = ContentTypeSubclassLimiter(ResourceSource)
 
 
 class FileSource(ResourceSource):
-	source = models.FileField(upload_to='philo/edmonia/%Y/%m/%d')
-
-
-class ImageSource(ResourceSource):
-	source = models.ImageField(upload_to='philo/edmonia/%Y/%m/%d')
+	source = models.FileField(upload_to='edmonia/files/%Y/%m/%d')
+	
+	class Meta:
+		app_label = 'edmonia'
 
 
 class URLSource(ResourceSource):
 	source = models.URLField()
+	
+	class Meta:
+		app_label = 'edmonia'
 
 
-class Resource(Entity, Titled):
+class Resource(Entity):
+	name = models.CharField(max_length=255)
+	slug = models.SlugField(max_length=255)
 	#people = models.ManyToManyField(PERSON_MODULE, through=ResourcePersonMetaInfo, blank=True, null=True)
 	creation_date = models.DateField(blank=True, null=True)
 	creation_time = models.TimeField(blank=True, null=True)
@@ -51,6 +54,9 @@ class Resource(Entity, Titled):
 	
 	# Include a special relationship to other resources as this is mutual.
 	related_resources = models.ManyToManyField('self', blank=True, null=True)
+	
+	class Meta:
+		app_label = 'edmonia'
 
 
 class ResourceRelated(Entity):
@@ -59,3 +65,9 @@ class ResourceRelated(Entity):
 	rel_to = generic.GenericForeignKey('related_content_type', 'related_object_id')
 	
 	resource = models.ForeignKey(Resource, related_name='related')
+	
+	class Meta:
+		app_label = 'edmonia'
+
+
+register_value_model(Resource)
