@@ -6,9 +6,10 @@ from django.conf.urls.defaults import url, patterns
 from django.contrib.auth.models import User, Group
 from django.contrib.sites.models import Site
 from django.core.exceptions import ValidationError, PermissionDenied
-from django.core.mail import send_mail
+from django.core.mail import send_mail, EmailMultiAlternatives
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
+from django.template.defaultfilters import striptags
 from django.utils.hashcompat import sha_constructor
 from django.utils.translation import ugettext_lazy as _
 
@@ -44,7 +45,8 @@ class FormItem(models.Model):
 """
 
 class Field(models.Model):
-	key = models.SlugField(max_length=50, db_index=True) # necessary for form generation.
+	#: The ``key`` is used as the field name during form generation.
+	key = models.SlugField(max_length=50, db_index=True)
 	form = models.ForeignKey(Form, related_name='fields')
 	order = models.PositiveSmallIntegerField()
 	
@@ -155,10 +157,12 @@ class FormView(MultiView):
 	# Submission settings
 	USER_CHOICE = 'u'
 	IP_CHOICE = 'i'
+	COOKIE_CHOICE = 'c'
 	NULL_CHOICE = 'n'
 	RECORD_CHOICES = (
 		(USER_CHOICE, 'User/IP Address'),
 		(IP_CHOICE, 'IP Address'),
+		(COOKIE_CHOICE, 'Cookie'),
 		(NULL_CHOICE, 'Nothing')
 	)
 	record = models.CharField(max_length=1, choices=RECORD_CHOICES, default=USER_CHOICE)
@@ -188,7 +192,7 @@ class FormView(MultiView):
 			# out of waldo?
 			raise PermissionDenied("You must be logged in to submit this form.")
 		
-		if not self.allow_changes and self.max_submissions > 0:
+		if not self.allow_changes and self.record != self.NULL_CHOICE and self.max_submissions > 0:
 			try:
 				kwargs = self._get_row_kwargs(request)
 			except KeyError:
@@ -222,7 +226,7 @@ class FormView(MultiView):
 			return {'ip_address': request.META['REMOTE_ADDR']}
 		# In all other cases, we have no way of knowing for sure whether someone's already posted
 		# unless we use cookies.
-		return {'cookie': request.COOKIES[self._get_cookie_key()]}
+		return {'cookie': request.COOKIES[self._get_cookie_key(request)]}
 	
 	def handle_submission(self, request, cleaned_forms, **kwargs):
 		row = self.record_submission(request, cleaned_forms)
@@ -247,19 +251,27 @@ class FormView(MultiView):
 			'row': row,
 			'forms': cleaned_forms,
 		}
-		msg = page.render_to_string(request=request, extra_context=c)
-		send_mail(subject, msg, from_email, to_emails)
+		text_content = page.render_to_string(request=request, extra_context=c)
+		if page.template.mimetype == 'text/html':
+			msg = EmailMultiAlternatives(subject, striptags(text_content), from_email, to_emails)
+			msg.attach_alternative(text_content, 'text/html')
+			msg.send()
+		else:
+			send_mail(subject, text_content, from_email, to_emails)
 	
 	def record_submission(self, request, cleaned_forms):
-		row_kwargs = self._get_row_kwargs(request)
-		row = self.result_rows.create(submitted=datetime.datetime.now(), **row_kwargs)
-		
-		if cleaned_forms and self.save_to_database:
-			for form in cleaned_forms:
-				for field in form.instance.fields.all():
-					value = FieldValue(field=field, row=row)
-					value.value = form.cleaned_data.get(field.key, None)
-					value.save()
+		if self.record == self.NULL_CHOICE:
+			row = ResultRow(form_view=self, submitted=datetime.datetime.now())
+		else:
+			row_kwargs = self._get_row_kwargs(request)
+			row = self.result_rows.create(submitted=datetime.datetime.now(), **row_kwargs)
+			
+			if cleaned_forms and self.save_to_database:
+				for form in cleaned_forms:
+					for field in form.instance.fields.all():
+						value = FieldValue(field=field, row=row)
+						value.value = form.cleaned_data.get(field.key, None)
+						value.save()
 		return row
 
 
