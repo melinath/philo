@@ -7,7 +7,7 @@ from django.core.validators import RegexValidator, MinValueValidator
 from django.db import models
 from django.forms.models import model_to_dict
 
-from philo.models.base import TreeEntity, TreeManager, Entity
+from philo.models.base import TreeEntity, TreeEntityManager, Entity
 from philo.models.nodes import Node, TargetURLModel
 
 
@@ -179,6 +179,15 @@ class Navigation(Entity):
 	"""
 	:class:`Navigation` represents a group of :class:`NavigationItem`\ s that have an intrinsic relationship in terms of navigating a website. For example, a ``main`` navigation versus a ``side`` navigation, or a ``authenticated`` navigation versus an ``anonymous`` navigation.
 	
+	A :class:`Navigation`'s :class:`NavigationItem`\ s will be accessible from its related :class:`.Node` and that :class:`.Node`'s descendants through a :class:`NavigationMapper` instance at :attr:`Node.navigation`. Example::
+	
+		>>> node.navigation_set.all()
+		[]
+		>>> parent = node.parent
+		>>> items = parent.navigation_set.get(key='main').roots.all()
+		>>> parent.navigation["main"] == node.navigation["main"] == list(items)
+		True
+	
 	"""
 	#: A :class:`NavigationManager` instance.
 	objects = NavigationManager()
@@ -215,7 +224,7 @@ class Navigation(Entity):
 		unique_together = ('node', 'key')
 
 
-class NavigationItemManager(TreeManager):
+class NavigationItemManager(TreeEntityManager):
 	use_for_related = True
 	
 	def get_query_set(self):
@@ -240,8 +249,9 @@ class NavigationItem(TreeEntity, TargetURLModel):
 		self._initial_data = model_to_dict(self)
 		self._is_cached = False
 	
-	def __unicode__(self):
-		return self.get_path(field='text', pathsep=u' › ')
+	def get_path(self, root=None, pathsep=u' › ', field='text'):
+		return super(NavigationItem, self).get_path(root, pathsep, field)
+	path = property(get_path)
 	
 	def clean(self):
 		super(NavigationItem, self).clean()
