@@ -1,0 +1,4 @@
+{% embed penfield.blogentry with "penfield/blogs/entries/__embed.html" %}
+{% for entry in entries %}
+	{% embed entry excerpt=1 %}
+{% endfor %}

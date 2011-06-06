@@ -1,0 +1,20 @@
+{% embed penfield.blogentry with "penfield/blogs/entries/_embed.html" %}
+<!DOCTYPE html>
+
+{# This is admittedly a little ugly, but we learn to love it, because it works. #}
+<!-- paulirish.com/2008/conditional-stylesheets-vs-css-hacks-answer-neither/ -->
+<!--[if lt IE 7 ]> <html class="no-js ie6"> <![endif]-->
+<!--[if IE 7 ]>    <html class="no-js ie7"> <![endif]-->
+<!--[if IE 8 ]>    <html class="no-js ie8"> <![endif]-->
+<!--[if IE 9 ]>    <html class="no-js ie9"> <![endif]-->
+<!--[if (gt IE 9)|!(IE)]><!--> <html class="no-js"><!--<![endif]-->
+	<head>
+		<meta charset="utf-8">
+		<title>{% block title %}Penfield{% endblock %}</title>
+		
+	</head>
+	<body class="{% block bodyclasses %}{% endblock %}">
+		{% block body %}
+		{% endblock %}
+	</body>
+</html>
