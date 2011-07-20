@@ -30,6 +30,11 @@ class AttributeInline(generic.GenericTabularInline):
 		template = 'admin/philo/edit_inline/grappelli_tabular_attribute.html'
 	else:
 		template = 'admin/philo/edit_inline/tabular_attribute.html'
+		
+	class Media:
+		js = (
+			"philo/js/AttributeInline.js",
+		)
 
 
 # HACK to bypass model validation for proxy fields
