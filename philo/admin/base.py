@@ -30,6 +30,10 @@ class AttributeInline(generic.GenericTabularInline):
 		template = 'admin/philo/edit_inline/grappelli_tabular_attribute.html'
 	else:
 		template = 'admin/philo/edit_inline/tabular_attribute.html'
+	
+	related_lookup_fields = {
+		'generic': [['content_type', 'object_id']]
+	}
 
 
 # HACK to bypass model validation for proxy fields

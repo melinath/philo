@@ -1,62 +1,41 @@
+from django import forms
 from django.contrib.contenttypes.generic import BaseGenericInlineFormSet
 from django.contrib.contenttypes.models import ContentType
-from django.forms.models import ModelForm
 
-from philo.models import Attribute
+from philo.models import Attribute, JSONValue, ForeignKeyValue, ManyToManyValue
 
 
 __all__ = ('AttributeForm', 'AttributeInlineFormSet')
 
 
-class AttributeForm(ModelForm):
-	"""
-	This class handles an attribute's fields as well as the fields for its value (if there is one.)
-	The fields defined will vary depending on the value type, but the fields for defining the value
-	(i.e. value_content_type and value_object_id) will always be defined. Except that value_object_id
-	will never be defined. BLARGH!
-	"""
-	def __init__(self, *args, **kwargs):
-		super(AttributeForm, self).__init__(*args, **kwargs)
-		
-		# This is necessary because model forms store changes to self.instance in their clean method.
-		# Mutter mutter.
-		value = self.instance.value
-		self._cached_value_ct_id = self.instance.value_content_type_id
-		self._cached_value = value
-		
-		# If there is a value, pull in its fields.
-		if value is not None:
-			self.value_fields = value.value_formfields()
-			self.fields.update(self.value_fields)
+class AttributeForm(forms.ModelForm):
+	def __init__(self, data=None, files=None, *args, **kwargs):
+		super(AttributeForm, self).__init__(data, files, *args, **kwargs)
+		if self.instance.value_content_type is None:
+			self.subform = None
+		else:
+			model = self.instance.value_content_type.model_class()
+			form_class = forms.models.modelform_factory(model)
+			self.subform = form_class(data, files, instance=self.instance.value, prefix=self.prefix)
+	
+	def has_changed(self):
+		subform = False if self.subform is None else self.subform.has_changed()
+		return super(AttributeForm, self).has_changed() or subform
+	
+	def full_clean(self):
+		super(AttributeForm, self).full_clean()
+		if self.subform is not None:
+			self.subform.full_clean()
 	
 	def save(self, *args, **kwargs):
-		# At this point, the cleaned_data has already been stored on self.instance.
-		
-		if self.instance.value_content_type_id != self._cached_value_ct_id:
-			# The value content type has changed. Clear the old value, if there was one.
-			if self._cached_value:
-				self._cached_value.delete()
-			
-			# Clear the submitted value, if any.
-			self.cleaned_data.pop('value', None)
-			
-			# Now create a new value instance so that on next instantiation, the form will
-			# know what fields to add.
-			if self.instance.value_content_type_id is not None:
-				self.instance.value = ContentType.objects.get_for_id(self.instance.value_content_type_id).model_class().objects.create()
-		elif self.instance.value is not None:
-			# The value content type is the same, but one of the value fields has changed.
-			
-			# Use construct_instance to apply the changes from the cleaned_data to the value instance.
-			fields = self.value_fields.keys()
-			if set(fields) & set(self.changed_data):
-				self.instance.value.construct_instance(**dict([(key, self.cleaned_data[key]) for key in fields]))
-				self.instance.value.save()
-		
-		return super(AttributeForm, self).save(*args, **kwargs)
+		instance = super(AttributeForm, self).save(*args, **kwargs)
+		if self.subform is not None:
+			subinstance = self.subform.save()
+		return instance
 	
 	class Meta:
 		model = Attribute
+		exclude = ('value_object_id',)
 
 
 class AttributeInlineFormSet(BaseGenericInlineFormSet):

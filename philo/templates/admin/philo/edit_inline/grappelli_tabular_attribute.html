@@ -55,8 +55,16 @@
 							{% endfor %}
 						{% endfor %}
 					{% endfor %}
-					{% with inline_admin_form.form.content_type as field %}<div class="td {{ field.name }}{% if field.errors %} error{% endif %}">{{ field }}{{ field.errors.as_ul }}</div>{% endwith %}
-					{% with inline_admin_form.form.value as field %}<div class="td {{ field.name }}{% if field.errors %} error{% endif %}">{{ field }}{{ field.errors.as_ul }}</div>{% endwith %}
+					{% for field in inline_admin_form.form.subform %}
+						{% if forloop.first and forloop.last %}<div class="td"></div>{% endif %}
+						<div class="td {{ field.name }}{% if field.errors %} error{% endif %}">
+							{{ field }}
+							{{ field.errors.as_ul }}
+						</div>
+					{% empty %}
+						<div class="td"></div>
+						<div class="td"></div>
+					{% endfor %}
 					<div class="td tools">
 						{% spaceless %}
 						<ul class="tools">
