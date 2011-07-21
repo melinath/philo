@@ -182,7 +182,14 @@ class Attribute(models.Model):
 	key = models.CharField(max_length=255, validators=[RegexValidator("\w+")], help_text="Must contain one or more alphanumeric characters or underscores.", db_index=True)
 	
 	def __unicode__(self):
-		return u'"%s": %s' % (self.key, self.value)
+		ct = ContentType.objects.get_for_id(self.value_content_type_id)
+		value_type = ct.model_class()
+		uni = u'"%s": %s' % (self.key, value_type._meta.verbose_name)
+		
+		if self.value_object_id is not None:
+			uni = u'%s: %s' % (uni, self.value)
+		
+		return uni
 	
 	def set_value(self, value, value_class=JSONValue):
 		"""Given a value and a value class, sets up self.value appropriately."""

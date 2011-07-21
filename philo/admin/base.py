@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib import admin
 from django.contrib.contenttypes import generic
+from django.db import models
 from django.http import HttpResponse
 from django.utils import simplejson as json
 from django.utils.html import escape
@@ -16,7 +17,7 @@ from philo.forms.entities import EntityForm, proxy_fields_for_entity_model
 COLLAPSE_CLASSES = ('collapse', 'collapse-closed', 'closed',)
 
 
-class AttributeInline(generic.GenericTabularInline):
+class AttributeInline(generic.GenericStackedInline):
 	ct_field = 'entity_content_type'
 	ct_fk_field = 'entity_object_id'
 	model = Attribute
@@ -27,9 +28,9 @@ class AttributeInline(generic.GenericTabularInline):
 	formset = AttributeInlineFormSet
 	fields = ['key', 'value_content_type']
 	if 'grappelli' in settings.INSTALLED_APPS:
-		template = 'admin/philo/edit_inline/grappelli_tabular_attribute.html'
+		template = 'admin/philo/edit_inline/grappelli_stacked_attribute.html'
 	else:
-		template = 'admin/philo/edit_inline/tabular_attribute.html'
+		template = 'admin/philo/edit_inline/stacked_attribute.html'
 	
 	related_lookup_fields = {
 		'generic': [['content_type', 'object_id']]
