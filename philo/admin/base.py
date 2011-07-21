@@ -35,6 +35,11 @@ class AttributeInline(generic.GenericStackedInline):
 	related_lookup_fields = {
 		'generic': [['content_type', 'object_id']]
 	}
+	
+	class Media:
+		js = (
+			"philo/js/AttributeInline.js",
+		)
 
 
 # HACK to bypass model validation for proxy fields
