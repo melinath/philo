@@ -24,19 +24,35 @@
 		
 		valueTypeChangeHandler: function (e) {
 			var $this = $(this),
+				// TODO, figure out how to get the real attribute_number
+				attribute_number = 0,
 				value_type = $('option:selected', $this).text(),
 				attributeWrapper = $this.closest('*[id^="philo-attribute-"]'),
 				fieldset = $('fieldset', attributeWrapper);
 			
 			$('.dynamic-fields', fieldset).remove();
 			
-			if (value_type == 'json value') {
-				fieldset.append(attributesInline.jsonTemplate.clone());
-			} else if (value_type == 'foreign key value') {
-				fieldset.append(attributesInline.foreignKeyTemplate.clone());
-			} else if (value_type == 'many to many value') {
-				fieldset.append(attributesInline.m2mTemplate.clone());
+			switch (value_type){
+				case 'json value':
+					field_row = attributesInline.jsonTemplate;
+					break;
+				case 'foreign key value':
+					field_row = attributesInline.foreignKeyTemplate;
+					break;
+				case 'many to many value':
+					field_row = attributesInline.m2mTemplate;
+					break;
+				default:
+					field_row = '';
 			}
+			
+			// replace __prefix__ with the index of the current attribute
+			field_row.html(field_row.html().replace(/__prefix__/g, attribute_number));
+			console.log(field_row.html())
+			
+			fieldset.append(field_row);
+			
+			// TODO: bind the foreign key events
 		}
 		
 	}
