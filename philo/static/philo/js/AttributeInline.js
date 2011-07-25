@@ -1,31 +1,29 @@
 ;(function($){
-	var NS = 'attributes'
-	var attributesInline = {
+	var NS = 'attributes',
+		VALUETYPE_ID_PATTERN = /id_philo-attribute-entity_content_type-entity_object_id-([0-9]+)-value_content_type/,
+		attributesInline = {
 		
 		init: function () {
 			var self = attributesInline,
 				attributesWrapper = $('#philo-attribute-entity_content_type-entity_object_id-group'),
 				valueTypeFields = $('select[name$="-value_content_type"]'),
 				emptyForm = $('.empty-form', attributesWrapper),
-				jsonTemplate = attributesInline.jsonTemplate = $('.row:nth-child(3)', attributesWrapper),
-				foreignKeyTemplate = attributesInline.foreignKeyTemplate = $('.row:nth-child(4)', attributesWrapper),
-				m2mTemplate = attributesInline.m2mTemplate = $('.row:nth-child(5)', attributesWrapper);
+				jsonTemplate = attributesInline.jsonTemplate = $('.row:nth-child(3)', emptyForm),
+				foreignKeyTemplate = attributesInline.foreignKeyTemplate = $('.row:nth-child(4)', emptyForm),
+				m2mTemplate = attributesInline.m2mTemplate = $('.row:nth-child(5)', emptyForm);
 			
 			// remove the fields from the template
 			jsonTemplate.addClass('dynamic-fields').detach();
 			foreignKeyTemplate.addClass('dynamic-fields').detach();
 			m2mTemplate.addClass('dynamic-fields').detach();
-			// append an empty container
-			$('fieldset', emptyForm).append('<div class="dynamic-attribute-container" />')
-			
+
 			// bind the change event to all the valueTypeFields
 			valueTypeFields.live('change.'+NS, self.valueTypeChangeHandler);
 		},
 		
 		valueTypeChangeHandler: function (e) {
 			var $this = $(this),
-				// TODO, figure out how to get the real attribute_number
-				attribute_number = 0,
+				attribute_number = $this.attr('id').match(VALUETYPE_ID_PATTERN)[1],
 				value_type = $('option:selected', $this).text(),
 				attributeWrapper = $this.closest('*[id^="philo-attribute-"]'),
 				fieldset = $('fieldset', attributeWrapper);
@@ -34,13 +32,13 @@
 			
 			switch (value_type){
 				case 'json value':
-					field_row = attributesInline.jsonTemplate;
+					field_row = attributesInline.jsonTemplate.clone();
 					break;
 				case 'foreign key value':
-					field_row = attributesInline.foreignKeyTemplate;
+					field_row = attributesInline.foreignKeyTemplate.clone();
 					break;
 				case 'many to many value':
-					field_row = attributesInline.m2mTemplate;
+					field_row = attributesInline.m2mTemplate.clone();
 					break;
 				default:
 					field_row = '';
@@ -48,7 +46,6 @@
 			
 			// replace __prefix__ with the index of the current attribute
 			field_row.html(field_row.html().replace(/__prefix__/g, attribute_number));
-			console.log(field_row.html())
 			
 			fieldset.append(field_row);
 			
